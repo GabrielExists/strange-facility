@@ -1,28 +1,71 @@
 // #![cfg(target_arch = "wasm32")]
 
+use std::cmp::max;
 use std::collections::BTreeMap;
 use yew::prelude::*;
-use std::fmt::{Display, Formatter};
-use std::iter::{zip, Zip};
-use std::slice::Iter;
 use crate::jobs::*;
+use gloo::timers::callback::{Timeout};
 
 pub struct App {
-    pub user_error: Option<String>,
-    pub applied_jobs: Vec<Job>,
+    pub history: Vec<HistoryStep>,
+    pub redo_queue: Vec<HistoryStep>,
+    pub last_combination: CombinationResult,
+    pub selected_resource: Option<Resource>,
+    pub discovered_jobs: Vec<Job>,
+
+    pub animation_resources: Option<(Timeout, Vec<Resource>)>,
+
     pub view_cache: ViewCache,
+    pub programmer_error: Option<String>,
 }
 
 #[derive(Clone, Debug)]
 pub enum AppMessage {
     AddJob(Job),
-    RemoveHistory(usize),
+    AddOne(usize),
+    RemoveOne(usize),
+    RemoveCluster(usize),
+    SelectResource(Resource),
+    AnimationResourceBlinkEnd(),
+    Undo(),
+    Redo(),
 }
 
 pub struct ViewCache {
-    pub job_and_ok: Vec<(Job, bool)>,
-    pub resource_lists: Vec<Vec<(Resource, i64)>>,
+    pub job_rows: Vec<JobRow>,
     pub seen_resources: Vec<Resource>,
+    pub current_resources: Vec<CurrentResource>,
+    pub total_days: usize,
+    pub user_error: Option<String>,
+    pub max_row: usize,
+    pub game_state: GameState,
+}
+
+pub struct JobRow {
+    job: Job,
+    output: JobOutput,
+    resource_list: Vec<(Resource, i64)>,
+    index: usize,
+}
+
+pub struct CurrentResource {
+    resource: Resource,
+    amount: i64,
+    row: usize,
+}
+
+pub enum HistoryStep {
+    Job(Job),
+    AddOne(usize),
+    RemoveOne(usize),
+    RemoveCluster(usize),
+}
+
+pub enum GameState {
+    Playing,
+    Won {
+        spent_days: usize,
+    },
 }
 
 impl Component for App {
@@ -30,26 +73,173 @@ impl Component for App {
     type Properties = ();
 
     fn create(_ctx: &Context<Self>) -> Self {
-        let applied_jobs = vec![Job::starting_resources()];
-        let (view_cache, user_error) = App::create_view_cache(&applied_jobs);
-        Self {
-            user_error,
-            applied_jobs,
-            view_cache,
+        let _history = history_from_combinations(vec![
+            (Resource::Submarine, Resource::Net),
+            (Resource::Submarine, Resource::Net),
+            (Resource::Submarine, Resource::Net),
+            (Resource::Submarine, Resource::Net),
+            (Resource::Submarine, Resource::Net),
+            (Resource::Martha, Resource::Fish),
+            (Resource::Submarine, Resource::Net),
+            (Resource::Submarine, Resource::Net),
+            (Resource::Submarine, Resource::Claw),
+            (Resource::Submarine, Resource::Claw),
+            (Resource::Submarine, Resource::Claw),
+            (Resource::Submarine, Resource::Claw),
+            (Resource::Scrap, Resource::Forge),
+            (Resource::SpareParts, Resource::Claw),
+            (Resource::Submarine, Resource::Claw),
+            (Resource::Submarine, Resource::Claw),
+            (Resource::Submarine, Resource::Claw),
+            (Resource::Submarine, Resource::Claw),
+            (Resource::Submarine, Resource::Claw),
+            (Resource::Submarine, Resource::Claw),
+            (Resource::Scrap, Resource::Forge),
+            (Resource::Scrap, Resource::Forge),
+            (Resource::Scrap, Resource::Forge),
+            (Resource::SpareParts, Resource::Net),
+            (Resource::Submarine, Resource::Net),
+            (Resource::Martha, Resource::Fish),
+            (Resource::Submarine, Resource::Net),
+            (Resource::Submarine, Resource::Net),
+            (Resource::Submarine, Resource::Net),
+            (Resource::Submarine, Resource::Net),
+            (Resource::Submarine, Resource::Net),
+            (Resource::Submarine, Resource::Net),
+            (Resource::Submarine, Resource::Net),
+            (Resource::Submarine, Resource::Claw),
+            (Resource::Submarine, Resource::Claw),
+            (Resource::Submarine, Resource::Claw),
+            (Resource::Submarine, Resource::Claw),
+            (Resource::Submarine, Resource::Claw),
+            (Resource::Submarine, Resource::Claw),
+            (Resource::Submarine, Resource::Claw),
+            (Resource::Submarine, Resource::Claw),
+            (Resource::Submarine, Resource::Claw),
+            (Resource::Submarine, Resource::Claw),
+            (Resource::Submarine, Resource::Claw),
+            (Resource::Submarine, Resource::Claw),
+            (Resource::Submarine, Resource::Claw),
+            (Resource::Submarine, Resource::Claw),
+            (Resource::Submarine, Resource::Claw),
+            (Resource::Submarine, Resource::Claw),
+            (Resource::Scrap, Resource::Forge),
+            (Resource::Scrap, Resource::Forge),
+            (Resource::Scrap, Resource::Forge),
+            (Resource::Scrap, Resource::Forge),
+            (Resource::Scrap, Resource::Forge),
+            (Resource::Scrap, Resource::Forge),
+            (Resource::Scrap, Resource::Forge),
+            (Resource::Scrap, Resource::Forge),
+            (Resource::Scrap, Resource::Forge),
+            (Resource::Scrap, Resource::Forge),
+            (Resource::Submarine, Resource::SpareParts),
+        ]);
+        let history = Vec::new();
+        let result = App::create_view_cache(&history);
+        match result {
+            Ok(view_cache) => {
+                Self {
+                    history,
+                    redo_queue: vec![],
+                    last_combination: CombinationResult::Nothing,
+                    selected_resource: None,
+                    discovered_jobs: vec![],
+                    animation_resources: None,
+                    view_cache,
+                    programmer_error: None,
+                }
+            }
+            Err(error) => {
+                Self {
+                    history: vec![],
+                    redo_queue: vec![],
+                    last_combination: CombinationResult::Nothing,
+                    selected_resource: None,
+                    discovered_jobs: vec![],
+                    animation_resources: None,
+                    view_cache: ViewCache {
+                        job_rows: Vec::new(),
+                        seen_resources: vec![],
+                        current_resources: vec![],
+                        total_days: 0,
+                        user_error: None,
+                        max_row: 0,
+                        game_state: GameState::Playing,
+                    },
+                    programmer_error: Some(error),
+                }
+            }
         }
     }
 
-    fn update(&mut self, _ctx: &Context<Self>, msg: Self::Message) -> bool {
-        self.user_error = None;
+    fn update(&mut self, ctx: &Context<Self>, msg: Self::Message) -> bool {
         match msg {
             AppMessage::AddJob(job) => {
-                self.applied_jobs.push(job);
+                let handle = {
+                    let link = ctx.link().clone();
+                    Timeout::new(300, move || link.send_message(AppMessage::AnimationResourceBlinkEnd()))
+                };
+                self.animation_resources = Some((handle, job.combination_resources.clone()));
+                self.add_job(job);
+                self.last_combination = CombinationResult::Nothing;
+                true
+            }
+            AppMessage::AddOne(index) => {
+                self.history.push(HistoryStep::AddOne(index));
+                self.redo_queue.clear();
                 self.refresh_view_cache();
                 true
             }
-            AppMessage::RemoveHistory(index) => {
-                if index < self.applied_jobs.len() {
-                    self.applied_jobs.remove(index);
+            AppMessage::RemoveOne(index) => {
+                self.history.push(HistoryStep::RemoveOne(index));
+                self.redo_queue.clear();
+                self.refresh_view_cache();
+                true
+            }
+            AppMessage::RemoveCluster(index) => {
+                self.history.push(HistoryStep::RemoveCluster(index));
+                self.redo_queue.clear();
+                self.refresh_view_cache();
+                true
+            }
+            AppMessage::SelectResource(resource) => {
+                match self.selected_resource {
+                    None => {
+                        self.selected_resource = Some(resource);
+                        true
+                    }
+                    Some(selected_resource) => {
+                        if selected_resource != resource {
+                            self.apply_combination(&selected_resource, &resource);
+                            self.selected_resource = None;
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                }
+            }
+            AppMessage::AnimationResourceBlinkEnd() => {
+                self.animation_resources = None;
+                true
+            }
+            AppMessage::Undo() => {
+                match self.history.pop() {
+                    None => {}
+                    Some(step) => {
+                        self.redo_queue.push(step);
+                    }
+                }
+                self.refresh_view_cache();
+                true
+            }
+            AppMessage::Redo() => {
+                match self.redo_queue.pop() {
+                    None => {}
+                    Some(step) => {
+                        self.history.push(step);
+                    }
                 }
                 self.refresh_view_cache();
                 true
@@ -60,51 +250,117 @@ impl Component for App {
     fn view(&self, ctx: &Context<Self>) -> Html {
         html! {
         <div class="flex flex-row">
-            <div class="h-screen border border-slate-800 bg-blue-100 flex-col">
+            <div class="p-2 border border-slate-800 bg-blue-100 flex-col gap-y-2">
                 <div class="p-4 te">
-                    {"This game is very WIP, but there's some stuff to play around with. Actions marked in red failed due to lack of resources. Try to successfully depart in the fewest days possible."}
+                    {
+                        match self.view_cache.game_state {
+                            GameState::Playing => {
+                                "This game is very WIP, but there's some stuff to play around with. Actions marked in red failed due to lack of resources. Try to successfully depart in the fewest days possible.".to_string()
+                            }
+                            GameState::Won{ spent_days } => {
+                                format!("You successfully escaped! It took you {} days!", spent_days)
+                            }
+                        }
+                    }
+                </div>
+                // List resources
+                <div class="border border-slate-900 p-2">
+                    <div>{"Combine two resources!"}</div>
+                { for (0..=self.view_cache.max_row).rev().map(|current_row| {
+                    html!{
+                    <div class="flex gap-1 my-1">
+                { for self
+                    .view_cache
+                    .current_resources
+                    .iter()
+                    .filter(|current_resource|{ current_resource.row == current_row })
+                    .map(|current_resource|
+                {
+                    let resource = current_resource.resource.clone();
+                    let flashing = self.animation_resources.as_ref().map(|(_interval, flashing_resources)| {flashing_resources.contains(&resource)}).unwrap_or(false);
+                    let selected = self.selected_resource.map(|selected| selected == resource).unwrap_or(false);
+                    if selected || flashing {
+                    html! {
+                        <button
+                            onclick={ctx.link().callback(move |_event: MouseEvent| AppMessage::SelectResource(resource.clone()))}
+                            class="bg-blue-500 text-slate-100 border border-slate-900 rounded-md p-2"
+                        >
+                            {format!("{}: {}", resource.long_name(), current_resource.amount)}
+                        </button>
+                    }
+                    } else {
+                    html! {
+                        <button
+                            onclick={ctx.link().callback(move |_event: MouseEvent| AppMessage::SelectResource(resource.clone()))}
+                            class="border border-slate-900 rounded-md p-2 active:bg-blue-500 active:text-slate-100"
+                        >
+                            {format!("{}: {}", resource.long_name(), current_resource.amount)}
+                        </button>
+                        }
+                    }
+                })}
+                    </div>
+                    }
+                })}
+                </div>
+                // List available jobs
+                <div class="flex flex-row flex-wrap gap-y-2">
+                { for self.discovered_jobs.iter().map(|job| {
+                    let callback_job = job.clone();
+                    html! {
+                    <button class="border border-slate-900 background-slate-100 p-2 rounded-md mr-1 mt-2" onclick={ctx.link().callback(move |_event: MouseEvent| AppMessage::AddJob(callback_job.clone()))}>
+                        {job.button_text}
+                    </button>
+                    }
+                })}
                 </div>
                 // Current error
-                { if self.user_error.is_some() {
-                    html!{ <div class="flex flex-row gap-y-2 p-2 border border-red-600"> {&self.user_error} </div> }
-                } else {
-                    html!{ <div></div> }
+                {
+                    if self.programmer_error.is_some() {
+                        html!{ <div class="flex flex-row gap-y-2 p-2 border-2 border-purple-600 my-2"> {&self.programmer_error} </div> }
+                    } else if let CombinationResult::Text(text) = &self.last_combination {
+                        html!{ <div class="flex flex-row gap-y-2 p-2 border-2 border-blue-500 my-2"> {text} </div> }
+                    } else if let CombinationResult::Job(_, Some(text)) = &self.last_combination {
+                        html!{ <div class="flex flex-row gap-y-2 p-2 border-2 border-blue-500 my-2"> {text} </div> }
+                    } else if self.view_cache.user_error.is_some() {
+                        html!{ <div class="flex flex-row gap-y-2 p-2 border-2 border-red-600 my-2"> {&self.view_cache.user_error} </div> }
+                    } else {
+                        html!{ <div class="flex flex-row gap-y-2 p-2 border-2 border-gray-900 my-2"> {"-"} </div> }
+                    }
                 }
-                }
-                // List available jobs
-                <div class="flex flex-row gap-y-2">
-                    { for Job::list_jobs().into_iter().map(|job| {
-                        let callback_job = job.clone();
-                        html! {
-                            <button class="border border-slate-900 background-slate-100 p-2" onclick={ctx.link().callback(move |_event: MouseEvent| AppMessage::AddJob(callback_job.clone()))}>
-                                {job.button_text}
-                            </button>
-                        }
-                    })}
+                <div class="flex gap-x-2">
                     // Total jobs
-                    <div class="border border-slate-900 background-slate-100 p-2 ml-4">
-                        {format!("Total days spent: {}", self.applied_jobs.len())}
+                    <div class="border border-slate-900 background-slate-100 p-2">
+                        {format!("Total days spent: {}", self.view_cache.total_days)}
                     </div>
+                    <button
+                        disabled={self.history.is_empty()}
+                        class={if self.history.is_empty() {
+                            "border background-slate-100 p-2 rounded-md border-slate-400 text-slate-400"
+                        } else {
+                            "border background-slate-100 p-2 rounded-md border-slate-900"
+                        }}
+                        onclick={ctx.link().callback(move |_event: MouseEvent| AppMessage::Undo())}>
+                        {"Undo"}
+                    </button>
+                    <button
+                        disabled={self.redo_queue.is_empty()}
+                        class={if self.redo_queue.is_empty() {
+                            "border border-slate-400 p-2 rounded-md text-slate-400 background-slate-100"
+                        } else {
+                            "border border-slate-900 p-2 rounded-md background-slate-100"
+                        }}
+                        onclick={ctx.link().callback(move |_event: MouseEvent| AppMessage::Redo())}>
+                        {"Redo"}
+                    </button>
                 </div>
-
-                // History of jobs
-            // <div class="flex flex-col gap-y-2">
-            // { for self.view_cache.job_and_ok.iter().enumerate().map(|(index, (job, is_ok))| {
-            //     html! {
-            //         <button class={
-            //             "border border-slate-900 background-slate-100 p-2 flex flex-row items-center justify-center"
-            //         } onclick={ctx.link().callback(move |_event: MouseEvent| AppMessage::RemoveHistory(index))}>
-            //             <div class={if *is_ok {"bg-red-600 w-1 h-6 p-1 mr-2 collapse"} else {"bg-red-600 w-1 h-6 p-1 mr-2 visible"}} ></div>
-            //             {job.button_text}
-            //         </button>
-            //     }
-            // })}
-                // </div>
-                                // "border border-slate-900 background-slate-100 p-2"
                 // Table of resource steps and jobs
-                <table class="table-auto">
+                <table class="table-auto m-2 mt-3">
                     <thead>
                         <tr>
+                            <td class="border border-slate-900 background-slate-100 p-2">
+                                {"Edit"}
+                            </td>
                             <td class="border border-slate-900 background-slate-100 p-2">
                                 {"Task for today"}
                             </td>
@@ -118,35 +374,80 @@ impl Component for App {
                         </tr>
                     </thead>
                     <tbody>
-                    { for self.get_table_zip().enumerate().rev().map(|(index, ((job, is_ok), resources))| {
+                    { for self.view_cache.job_rows.iter().rev().map(|job_row| {
+                        let index = job_row.index;
+                        let failing_resources = job_row.output.failing_resources();
+                        let job = &job_row.job;
                         html! {
                         <tr>
-                            <td class="border border-slate-900 background-slate-100">
-                            { if job.button {
+                            <td class="border border-slate-900 background-slate-100 px-1">
+                                <div class="flex">
+                            { if job.removable {
                                 html! {
-                                <button class={
-                                    "border border-slate-900 background-slate-100 p-2 flex flex-row items-center justify-center"
-                                } onclick={ctx.link().callback(move |_event: MouseEvent| AppMessage::RemoveHistory(index))}>
-                                    <div class={if *is_ok {"bg-red-600 w-1 h-6 p-1 mr-2 collapse"} else {"bg-red-600 w-1 h-6 p-1 mr-2 visible"}} ></div>
-                                    {job.button_text}
-                                </button>
+                                    <button class={
+                                        "border border-slate-900 background-slate-100 p-2 py-1 pl-1 flex flex-row items-center justify-center rounded-md"
+                                    } onclick={ctx.link().callback(move |_event: MouseEvent| AppMessage::AddOne(index))}>
+                                        {"+1"}
+                                    </button>
                                 }
                             } else {
+                                html!{<></>}
+                            }}
+                            { if job.removable && job.instances != 1 {
                                 html! {
-                                <div class={ "background-slate-100 p-2 flex flex-row items-center justify-center" }>
-                                    <div class={if *is_ok {"bg-red-600 w-1 h-6 p-1 mr-2 collapse"} else {"bg-red-600 w-1 h-6 p-1 mr-2 visible"}} ></div>
-                                    {job.button_text}
-                                </div>
+                                    <button class={
+                                        "ml-2 border border-slate-900 background-slate-100 p-2 py-1 pl-1 flex flex-row items-center justify-center rounded-md"
+                                    } onclick={ctx.link().callback(move |_event: MouseEvent| AppMessage::RemoveOne(index))}>
+                                        {"-1"}
+                                    </button>
                                 }
-                            } }
+                            } else {
+                                html!{<></>}
+                            }}
+                            { if job.removable {
+                                html! {
+                                    <button class={
+                                        "ml-2 border border-slate-900 background-slate-100 px-2 py-1 flex flex-row items-center justify-center rounded-md"
+                                    } onclick={ctx.link().callback(move |_event: MouseEvent| AppMessage::RemoveCluster(index))}>
+                                        {"X"}
+                                    </button>
+                                }
+                            } else {
+                                html!{<></>}
+                            }}
+                                </div>
                             </td>
-                            { for resources.iter().map(|(_resource, amount)| {
+                            <td class="border border-slate-900 background-slate-100">
+                            // { if job.removable {
+                            //     html! {
+                            //     <button class={
+                            //         "border border-slate-900 background-slate-100 p-2 flex flex-row items-center justify-center rounded-md"
+                            //     } onclick={ctx.link().callback(move |_event: MouseEvent| AppMessage::RemoveOne(index))}>
+                            //         <div class={if *is_ok {"bg-red-600 w-1 h-6 p-1 mr-2 collapse"} else {"bg-red-600 w-1 h-6 p-1 mr-2 visible"}} ></div>
+                            //         {if job.instances != 1 { format!("{}x ", job.instances)} else {String::new()}}
+                            //         {job.button_text}
+                            //     </button>
+                            //     }
+                            // } else {
+                            //     html! {
+                                <div class={ "background-slate-100 p-2 flex flex-row items-center justify-center" }>
+                                    <div class={if job_row.output.is_ok() {"bg-red-600 w-1 h-6 p-1 mr-2 collapse"} else {"bg-red-600 w-1 h-6 p-1 mr-2 visible"}} ></div>
+                                    <div class={if job_row.output.is_ok() {""} else {"line-through"}}>
+                                        {if job.instances != 1 { format!("{}x ", job.instances)} else {String::new()}}
+                                        {job.button_text}
+                                    </div>
+
+                                </div>
+                            // }
+                            // } }
+                            </td>
+                            { for job_row.resource_list.iter().map(|(resource, amount)| {
                                 html! {
                             <td class="border border-slate-900 background-slate-100 p-2">
-                                    <div class="flex">
-                                <div class={if *amount >= 0 {"collapse"} else {"bg-red-600 w-1 h-6 p-1 mr-2 visible"}} ></div>
-                                {amount.to_string()}
-                                    </div>
+                                <div class="flex">
+                                    <div class={if !failing_resources.contains(resource) {"collapse"} else {"bg-red-600 w-1 h-6 p-1 mr-2 visible"}} ></div>
+                                    {amount.to_string()}
+                                </div>
                             </td>
                                 }
                             })}
@@ -163,58 +464,22 @@ impl Component for App {
     }
 }
 
-impl App {
-    pub fn refresh_view_cache(&mut self) {
-        let (view_cache, user_error) = Self::create_view_cache(&self.applied_jobs);
-        self.user_error = user_error;
-        self.view_cache = view_cache;
-    }
-
-    pub fn create_view_cache(applied_jobs: &Vec<Job>) -> (ViewCache, Option<String>) {
-        let mut job_and_ok = Vec::new();
-        let mut resource_sets = Vec::new();
-        let mut user_error = None;
-        let mut seen_resources = Vec::new();
-        let mut resources = BTreeMap::new();
-        for job in applied_jobs.iter() {
-            let (new_resources, result) = apply_job(resources.clone(), &job);
-            for resource in new_resources.keys() {
-                if !seen_resources.contains(resource) {
-                    seen_resources.push(resource.clone());
-                }
+fn history_from_combinations(combinations: Vec<(Resource, Resource)>) -> Vec<HistoryStep> {
+    let mut history = Vec::new();
+    for (first, second) in combinations {
+        let result = first.combine(&second);
+        match result {
+            CombinationResult::Job(job, _) => {
+                history.push(HistoryStep::Job(job));
             }
-            match result {
-                Ok(()) => {
-                    job_and_ok.push((job.clone(), true));
-                    resource_sets.push(new_resources.clone());
-                    resources = new_resources;
-                    user_error = None;
-                }
-                Err(error_message) => {
-                    job_and_ok.push((job.clone(), false));
-                    resource_sets.push(new_resources.clone());
-                    user_error = Some(error_message);
-                }
-            }
+            CombinationResult::Text(_) => {}
+            CombinationResult::Nothing => {}
         }
-        // seen_resources.append(&mut resources);
-//     for index in 0..jobs.len() {
-//         let previous_resources = apply_jobs_partial(resources.clone(), jobs[0..index].to_vec());
-//         let job = jobs.get(index).expect("This index should be valid.").clone();
-//         let success = apply_job(previous_resources, job.clone()).is_ok();
-//         results.push((job, success));
-//     }
-
-        Self::prune(&mut seen_resources);
-        let resource_lists = Self::normalize_list(&resource_sets, &seen_resources);
-
-        let view_cache = ViewCache {
-            job_and_ok,
-            resource_lists,
-            seen_resources,
-        };
-        (view_cache, user_error)
     }
+    history
+}
+
+impl App {
 
     // fn norm(resource_sets: &mut Vec<BTreeMap<Resource, u64>>, resources: &mut Resources) {
     //     let attributes = attributes();
@@ -236,11 +501,17 @@ impl App {
     // }
     //
 
-    fn normalize_list(resource_sets: &Vec<ResourceSet>, seen_resources: &Vec<Resource>) -> Vec<Vec<(Resource, i64)>>{
-        resource_sets.iter().map(|set|{
-            Self::normalize(set, seen_resources)
-        }).collect()
+    // fn normalize_list(resource_sets: &Vec<ResourceSet>, seen_resources: &Vec<Resource>) -> Vec<Vec<(Resource, i64)>> {
+    //     resource_sets.iter().map(|set| {
+    //         Self::normalize(set, seen_resources)
+    //     }).collect()
+    // }
+    fn add_job(&mut self, job: Job) {
+        self.history.push(HistoryStep::Job(job));
+        self.redo_queue.clear();
+        self.refresh_view_cache();
     }
+
     fn normalize(resource_set: &ResourceSet, seen_resources: &Vec<Resource>) -> Vec<(Resource, i64)> {
         let mut result = Vec::new();
         for resource in seen_resources.iter() {
@@ -249,67 +520,179 @@ impl App {
         result
     }
 
-    fn prune(resources: &mut Vec<Resource>) {
+    fn remove_invisible(resources: &mut Vec<Resource>) {
         let attributes = attributes();
-        resources.retain(|item|{
+        resources.retain(|item| {
             attributes.get(item).map(|attribute| attribute.visible).unwrap_or(true)
         });
     }
-
-    fn get_table_zip(&self) -> Zip<Iter<(Job, bool)>, Iter<ResourceList>> {
-        zip(self.view_cache.job_and_ok.iter(), self.view_cache.resource_lists.iter())
+    fn apply_combination(&mut self, first_resource: &Resource, second_resource: &Resource) {
+        let combination_result = first_resource.combine(second_resource);
+        match &combination_result {
+            CombinationResult::Job(new_job, _) => {
+                if new_job.saved {
+                    if self.discovered_jobs.iter().find(|job| job.id == new_job.id).is_none() {
+                        self.discovered_jobs.push(new_job.clone());
+                    }
+                }
+                self.add_job(new_job.clone())
+            }
+            CombinationResult::Text(_text) => {}
+            CombinationResult::Nothing => {}
+        }
+        self.last_combination = combination_result;
     }
-    // fn get_starting_resources(&self) -> Resources {
-    //     let mut resources = starting_resources();
-    //     Self::prune_and_normalize(&mut resources, &self.view_cache.resources);
-    //     resources
-    // }
-    // fn get_visible_resources(&self) -> Resources {
-    //     let attributes = attributes();
-    //     apply_jobs_partial(starting_resources(), self.applied_jobs.clone())
-    //         .into_iter()
-    //         .filter(|(resource, _num)| {
-    //             attributes.get(resource).map(|att| att.visible).unwrap_or(true)
-    //         })
-    //         .collect()
-    // }
-    //
-    // fn get_visible_resources_first_n(&self, n: usize) -> Resources {
-    //     let attributes = attributes();
-    //     apply_jobs_partial(starting_resources(), self.applied_jobs.clone())
-    //         .into_iter()
-    //         .take(n)
-    //         .filter(|(resource, _num)| {
-    //             attributes.get(resource).map(|att| att.visible).unwrap_or(true)
-    //         })
-    //         .collect()
-    // }
-}
 
-impl Display for Resource {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Resource::Player => {
-                f.write_str("Player")
+    pub fn refresh_view_cache(&mut self) {
+        let result = Self::create_view_cache(&self.history);
+        match result {
+            Ok(view_cache) => {
+                self.view_cache = view_cache;
             }
-            Resource::Scrap => {
-                f.write_str("Scrap")
-            }
-            Resource::SpareParts => {
-                f.write_str("Spare parts")
-            }
-            Resource::Fish => {
-                f.write_str("Fish")
-            }
-            Resource::FoodRation => {
-                f.write_str("Food ration")
-            }
-            Resource::AirTank => {
-                f.write_str("Air tank")
-            }
-            Resource::AirTankPressurizer => {
-                f.write_str("Air tank pressurizer")
+            Err(programmer_error) => {
+                self.programmer_error = Some(programmer_error);
             }
         }
+    }
+
+    pub fn create_view_cache(steps: &Vec<HistoryStep>) -> Result<ViewCache, String> {
+        let mut user_error = None;
+        let mut seen_resources = Vec::new();
+        let mut jobs_to_execute = vec![Job::starting_resources()];
+        // Apply history to create job application order
+        for step in steps {
+            match step {
+                HistoryStep::Job(job) => {
+                    jobs_to_execute.push(job.clone());
+                }
+                HistoryStep::AddOne(index) => {
+                    let job = jobs_to_execute.get(*index);
+                    if let Some(job) = job {
+                        jobs_to_execute.insert(*index, job.clone())
+                    }
+                }
+                HistoryStep::RemoveOne(index) => {
+                    if *index < jobs_to_execute.len() {
+                        jobs_to_execute.remove(*index);
+                    }
+                }
+                HistoryStep::RemoveCluster(index) => {
+                    if *index < jobs_to_execute.len() {
+                        let first_job = jobs_to_execute.remove(*index);
+                        // The latter elements have moved over now, so we can keep checking this
+                        // slot to find all consecutive similar jobs
+                        loop {
+                            match jobs_to_execute.get(*index) {
+                                Some(job) => {
+                                    if first_job.id == job.id {
+                                        jobs_to_execute.remove(*index);
+                                    } else {
+                                        break;
+                                    }
+                                }
+                                None => {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // Apply jobs
+        let mut resources = BTreeMap::new();
+        let mut job_and_output = Vec::new();
+        for job in jobs_to_execute.into_iter() {
+            let job_output = apply_job(resources.clone(), &job)?;
+            for resource in job_output.resources_after.keys() {
+                if !seen_resources.contains(resource) {
+                    seen_resources.push(resource.clone());
+                }
+            }
+            match job_output.user_error() {
+                None => {
+                    resources = job_output.resources_after.clone();
+                    user_error = None;
+                }
+                Some(error_message) => {
+                    user_error = Some(error_message.to_string());
+                }
+            }
+            job_and_output.push((job, job_output));
+        };
+
+        let mut total_days = 0;
+        let mut game_state = GameState::Playing;
+        for (job, output) in job_and_output.iter() {
+            total_days += job.instances;
+            if job.id == WIN_JOB_ID && output.is_ok() {
+                game_state = GameState::Won {
+                    spent_days: total_days,
+                }
+            }
+        }
+
+        // Prepare the complete list of resources the player has in the history
+        Self::remove_invisible(&mut seen_resources);
+        seen_resources.sort();
+        // Process selectable resources for display
+        let attributes = attributes();
+        let mut max_row = 0;
+        let current_resources = Self::normalize(&resources, &seen_resources)
+            .into_iter()
+            .filter_map(|(resource, amount)| {
+                if amount == 0 {
+                    return None;
+                }
+                let row = attributes.get(&resource).map(|attributes| {
+                    attributes.row.clone()
+                }).unwrap_or(0);
+                max_row = max(max_row, row);
+                Some(CurrentResource {
+                    resource,
+                    amount,
+                    row,
+                })
+            }).collect::<Vec<_>>();
+
+        // Merge jobs
+        let mut job_rows = Vec::new();
+        for (index, (this_job, this_output)) in job_and_output.into_iter().enumerate() {
+            match job_rows.last_mut() {
+                None => {
+                    let resource_list = Self::normalize(&this_output.resources_after, &seen_resources);
+                    job_rows.push(JobRow {
+                        job: this_job,
+                        output: this_output,
+                        resource_list,
+                        index,
+                    });
+                }
+                Some(last_row) => {
+                    let resource_list = Self::normalize(&this_output.resources_after, &seen_resources);
+                    if this_job.id == last_row.job.id && this_output.delta_index() == last_row.output.delta_index() && this_output.is_ok() && last_row.output.is_ok() {
+                        last_row.job.instances += this_job.instances;
+                        last_row.resource_list = resource_list;
+                    } else {
+                        job_rows.push(JobRow {
+                            job: this_job,
+                            output: this_output,
+                            resource_list,
+                            index,
+                        });
+                    }
+                }
+            }
+        }
+
+        Ok(ViewCache {
+            job_rows,
+            seen_resources,
+            current_resources,
+            total_days,
+            user_error,
+            max_row,
+            game_state,
+        })
     }
 }

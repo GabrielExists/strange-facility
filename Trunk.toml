@@ -1,6 +1,6 @@
 [build]
 target = "./index.html"
-public_url = "/strange-facility-2"
+public_url = "/strange-facility-3"
 release = true
 
 [watch]
