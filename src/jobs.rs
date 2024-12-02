@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt::{Display, Formatter};
+// use std::iter::zip;
 use std::vec;
 
 
@@ -50,6 +51,8 @@ pub enum Resource {
 pub struct ResourceAttributes {
     pub upkeep: Vec<Vec<(Resource, Amount)>>,
     pub visible: bool,
+    // Display as a name on each row intead of reserving a column
+    pub display_as_name: bool,
     pub row: usize,
 }
 
@@ -137,8 +140,10 @@ pub struct JobOutput {
 
 pub struct DeltaOutput {
     pub status: DeltaOutputStatus,
-    resources_after: ResourceSet,
+    pub changed_resources: Vec<Resource>,
+    pub resources_after: ResourceSet,
 }
+
 
 pub enum DeltaOutputStatus {
     // All requirements were fulfilled for some set
@@ -159,8 +164,8 @@ pub enum DeltaOutputStatus {
 }
 
 impl JobOutput {
-    pub fn user_error(&self) -> Option<&str> {
-        self.main_output.user_errors().map(|list| list.first()).unwrap_or(None).map(|string| string.as_str())
+    pub fn user_message(&self) -> Option<&str> {
+        self.main_output.user_messages().map(|list| list.first()).unwrap_or(None).map(|string| string.as_str())
     }
     pub fn is_ok(&self) -> bool {
         if !self.main_output.is_ok() {
@@ -184,10 +189,39 @@ impl JobOutput {
         }
         failing_resources
     }
+    pub fn is_mergeable(&self, other: &Self) -> bool {
+        return (self.is_ok() && other.is_ok()) || (!self.is_ok() && !other.is_ok());
+        // if !self.main_output.is_mergeable(&other.main_output) {
+        //     return false;
+        // }
+        // if self.upkeep_outputs.len() != other.upkeep_outputs.len() {
+        //     return false;
+        // }
+        // for (
+        //     (first_resource, first_output),
+        //     (second_resource, second_output)
+        // ) in zip(self.upkeep_outputs.iter(), other.upkeep_outputs.iter()) {
+        //     if first_resource != second_resource {
+        //         return false;
+        //     }
+        //     if !first_output.is_mergeable(&second_output) {
+        //         return false;
+        //     }
+        // }
+        // true
+    }
+    pub fn get_changed_resources(&self) -> Vec<Resource> {
+        let mut total = Vec::new();
+        total.extend(self.main_output.changed_resources.iter());
+        for (_resource, output) in self.upkeep_outputs.iter() {
+            total.extend(output.changed_resources.iter());
+        }
+        total
+    }
 }
 
 impl DeltaOutput {
-    pub fn user_errors(&self) -> Option<&Vec<String>> {
+    pub fn user_messages(&self) -> Option<&Vec<String>> {
         match &self.status {
             DeltaOutputStatus::Success { .. } => None,
             DeltaOutputStatus::SuccessX { .. } => None,
@@ -202,6 +236,31 @@ impl DeltaOutput {
     }
     pub fn failing_resources(&self) -> Vec<Resource> {
         self.status.failing_resources()
+    }
+    pub(crate) fn is_mergeable(&self, other: &DeltaOutput) -> bool {
+        match (&self.status, &other.status) {
+            (
+                DeltaOutputStatus::Success { delta_index: first_index },
+                DeltaOutputStatus::Success { delta_index: second_index }
+            ) => {
+                if first_index != second_index {
+                    return false;
+                }
+            }
+            (
+                DeltaOutputStatus::SuccessX { delta_index: first_index, .. },
+                DeltaOutputStatus::SuccessX { delta_index: second_index, .. }
+            ) => {
+                if first_index != second_index {
+                    return false;
+                }
+            }
+            (DeltaOutputStatus::Failure { .. }, DeltaOutputStatus::Failure { .. }) => {}
+            (_, _) => {
+                return false;
+            }
+        }
+        true
     }
 }
 
@@ -273,6 +332,7 @@ pub fn apply_deltas(mut resources: ResourceSet, deltas: &Vec<Vec<(Resource, Amou
     let mut x = None;
     let mut errors = Vec::new();
     let mut failing_resources = Vec::new();
+    let mut changed_resources = Vec::new();
     let mut delta_index = 0;
     let mut delta = None;
     for (new_delta_index, current_delta) in deltas.iter().enumerate() {
@@ -322,24 +382,37 @@ pub fn apply_deltas(mut resources: ResourceSet, deltas: &Vec<Vec<(Resource, Amou
         }
     }
     if let Some(delta) = delta {
-        for (resource, amount) in delta {
+        for (resource, amount) in delta.into_iter() {
             let current_resource = resources.entry(resource.clone()).or_insert(0);
             match amount {
                 Amount::Gain(delta) => {
+                    if *delta != 0 {
+                        changed_resources.push(resource.clone());
+                    }
                     *current_resource += delta;
                 }
                 Amount::Spend(delta) => {
+                    if *delta != 0 {
+                        changed_resources.push(resource.clone());
+                    }
                     *current_resource -= delta;
                 }
                 Amount::Catalyst(_) => {}
                 Amount::GainX(delta_per) => {
+                    if *delta_per != 0 {
+                        changed_resources.push(resource.clone());
+                    }
                     *current_resource += delta_per * x.unwrap_or(0);
                 }
                 Amount::SpendX(delta_per) => {
+                    if *delta_per != 0 {
+                        changed_resources.push(resource.clone());
+                    }
                     *current_resource -= delta_per * x.unwrap_or(0);
                 }
                 Amount::CatalystX(_delta_per) => {}
                 Amount::Set(target) => {
+                    changed_resources.push(resource.clone());
                     *current_resource -= target;
                 }
             }
@@ -367,6 +440,7 @@ pub fn apply_deltas(mut resources: ResourceSet, deltas: &Vec<Vec<(Resource, Amou
     };
     Ok(DeltaOutput {
         status,
+        changed_resources,
         resources_after: resources,
     })
     // if delta.is_negative() {
@@ -448,7 +522,7 @@ impl Display for Resource {
                 f.write_str("Martha")
             }
             Resource::MarthaAtWork => {
-                f.write_str("Working Martha")
+                f.write_str("WorkingMartha")
             }
             Resource::Forge => {
                 f.write_str("Forge")
@@ -467,6 +541,7 @@ macro_rules! both {
 }
 
 pub const WIN_JOB_ID: usize = 1;
+
 impl Resource {
     pub fn long_name(&self) -> &'static str {
         match self {
@@ -505,7 +580,7 @@ impl Resource {
                         (Resource::FoodRation, Amount::Spend(20)),
                         (Resource::SpareParts, Amount::Spend(20)),
                     ]], vec![self.clone(), other.clone()], &mut id),
-                    Some("The net burns fruitlessly.".to_string()),
+                    Some("With some trepidation, you set off into the dark depths.".to_string()),
                 )
             }
             both!(Submarine, Net) |
@@ -894,36 +969,43 @@ pub fn attributes() -> AttributeMappings {
         (Resource::Player, ResourceAttributes {
             upkeep: vec![Vec::from([(Resource::FoodRation, Amount::Spend(1))])],
             visible: false,
+            display_as_name: true,
             row: 0,
         }),
         (Resource::Submarine, ResourceAttributes {
             upkeep: Vec::from([]),
             visible: true,
+            display_as_name: true,
             row: 1,
         }),
         (Resource::Net, ResourceAttributes {
             upkeep: Vec::from([]),
             visible: true,
+            display_as_name: true,
             row: 1,
         }),
         (Resource::NetUpgraded, ResourceAttributes {
             upkeep: Vec::from([]),
             visible: true,
+            display_as_name: true,
             row: 1,
         }),
         (Resource::Claw, ResourceAttributes {
             upkeep: Vec::from([]),
             visible: true,
+            display_as_name: true,
             row: 1,
         }),
         (Resource::ClawUpgraded, ResourceAttributes {
             upkeep: Vec::from([]),
             visible: true,
+            display_as_name: true,
             row: 1,
         }),
         (Resource::Martha, ResourceAttributes {
             upkeep: Vec::from([]),
             visible: true,
+            display_as_name: true,
             row: 1,
         }),
         (Resource::MarthaAtWork, ResourceAttributes {
@@ -938,11 +1020,13 @@ pub fn attributes() -> AttributeMappings {
                 ],
             ],
             visible: true,
+            display_as_name: true,
             row: 1,
         }),
         (Resource::Forge, ResourceAttributes {
             upkeep: Vec::from([]),
             visible: true,
+            display_as_name: true,
             row: 1,
         }),
         // (Resource::ForgeGlowing, ResourceAttributes {

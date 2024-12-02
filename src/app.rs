@@ -45,7 +45,19 @@ pub struct JobRow {
     job: Job,
     output: JobOutput,
     resource_list: Vec<(Resource, i64)>,
+    resource_tool_list: Vec<ResourceTool>,
     index: usize,
+}
+
+pub struct ResourceTool {
+    resource_pair: (Resource, i64),
+    status: ResourceToolStatus,
+}
+
+pub enum ResourceToolStatus {
+    Standard,
+    Changed,
+    Removed,
 }
 
 pub struct CurrentResource {
@@ -371,6 +383,9 @@ impl Component for App {
                             </td>
                         }
                     })}
+                            <td class="border border-slate-900 background-slate-100 p-2">
+                                {"Other"}
+                            </td>
                         </tr>
                     </thead>
                     <tbody>
@@ -445,12 +460,51 @@ impl Component for App {
                                 html! {
                             <td class="border border-slate-900 background-slate-100 p-2">
                                 <div class="flex">
-                                    <div class={if !failing_resources.contains(resource) {"collapse"} else {"bg-red-600 w-1 h-6 p-1 mr-2 visible"}} ></div>
-                                    {amount.to_string()}
+                                    <div class={if !failing_resources.contains(resource) {"collapse"} else {"bg-red-600 w-1 h-6 p-1 mr-2 visible"}} >
+                                    </div>
+                                    <div class={if job_row.output.get_changed_resources().contains(resource) {"underline"} else {""}}>
+                                        {amount.to_string()}
+                                    </div>
                                 </div>
                             </td>
                                 }
                             })}
+                            <td class="border border-slate-900 background-slate-100 p-2">
+                            { for job_row.resource_tool_list.iter().map(|tool| {
+                                let (resource, amount) = tool.resource_pair;
+                                let (text, class_string) = match tool.status {
+                                    ResourceToolStatus::Standard => {
+                                        let text = if amount == 1 {
+                                            format!("{}", resource)
+                                        } else {
+                                            format!("{}: {}", resource, amount)
+                                        };
+                                        ( text, "" )
+                                    }
+                                    ResourceToolStatus::Changed => {
+                                        let text = if amount == 1 {
+                                            format!("{}", resource)
+                                        } else {
+                                            format!("{}: {}", resource, amount)
+                                        };
+                                        ( text, "underline" )
+                                    },
+                                    ResourceToolStatus::Removed => {
+                                        let text = format!("{}", resource);
+                                        ( text, "line-through" )
+                                    }
+                                };
+                                html! {
+                                <div class="flex">
+                                    <div class={if !failing_resources.contains(&resource) {"collapse"} else {"bg-red-600 w-1 h-6 p-1 mr-2 visible"}} >
+                                    </div>
+                                    <div class={class_string}>
+                                        {text}
+                                    </div>
+                                </div>
+                                }
+                            })}
+                            </td>
                         </tr>
                         }
                     })}
@@ -523,7 +577,7 @@ impl App {
     fn remove_invisible(resources: &mut Vec<Resource>) {
         let attributes = attributes();
         resources.retain(|item| {
-            attributes.get(item).map(|attribute| attribute.visible).unwrap_or(true)
+            attributes.get(item).map(|attribute| attribute.visible && !attribute.display_as_name).unwrap_or(true)
         });
     }
     fn apply_combination(&mut self, first_resource: &Resource, second_resource: &Resource) {
@@ -541,6 +595,40 @@ impl App {
             CombinationResult::Nothing => {}
         }
         self.last_combination = combination_result;
+    }
+
+    fn create_resource_tool_list(resources: &ResourceSet, changed: Option<&Vec<Resource>>) -> Vec<ResourceTool> {
+        let attributes = attributes();
+        let mut resource_tool_list = Vec::new();
+        for (resource, amount) in resources.iter() {
+            let (display_as_name, visible) = attributes.get(resource)
+                .map(|attribute| (attribute.display_as_name, attribute.visible))
+                .unwrap_or((false, false));
+            let changed = changed.map(|changed | changed.contains(resource)).unwrap_or(false);
+            if display_as_name && visible {
+                if changed {
+                    if *amount > 0 {
+                        resource_tool_list.push(ResourceTool {
+                            resource_pair: (resource.clone(), *amount),
+                            status: ResourceToolStatus::Changed,
+                        });
+                    } else {
+                        resource_tool_list.push(ResourceTool {
+                            resource_pair: (resource.clone(), *amount),
+                            status: ResourceToolStatus::Removed,
+                        });
+                    }
+                } else {
+                    if *amount > 0 {
+                        resource_tool_list.push(ResourceTool {
+                            resource_pair: (resource.clone(), *amount),
+                            status: ResourceToolStatus::Standard,
+                        });
+                    }
+                }
+            }
+        }
+        resource_tool_list
     }
 
     pub fn refresh_view_cache(&mut self) {
@@ -605,13 +693,19 @@ impl App {
         for job in jobs_to_execute.into_iter() {
             let job_output = apply_job(resources.clone(), &job)?;
             for resource in job_output.resources_after.keys() {
-                if !seen_resources.contains(resource) {
-                    seen_resources.push(resource.clone());
+                let amount = job_output.resources_after.get(resource);
+                if let Some(amount) = amount {
+                    if !seen_resources.contains(resource) && *amount != 0 {
+                        seen_resources.push(resource.clone());
+                    }
                 }
             }
-            match job_output.user_error() {
+
+            if job_output.is_ok() {
+                resources = job_output.resources_after.clone();
+            }
+            match job_output.user_message() {
                 None => {
-                    resources = job_output.resources_after.clone();
                     user_error = None;
                 }
                 Some(error_message) => {
@@ -624,22 +718,66 @@ impl App {
         let mut total_days = 0;
         let mut game_state = GameState::Playing;
         for (job, output) in job_and_output.iter() {
-            total_days += job.instances;
-            if job.id == WIN_JOB_ID && output.is_ok() {
-                game_state = GameState::Won {
-                    spent_days: total_days,
+            if output.is_ok() {
+                total_days += job.instances;
+                if job.id == WIN_JOB_ID {
+                    game_state = GameState::Won {
+                        spent_days: total_days,
+                    }
                 }
             }
         }
 
-        // Prepare the complete list of resources the player has in the history
+        // Prepare the complete list of resources that should be represented on each row of the table
         Self::remove_invisible(&mut seen_resources);
         seen_resources.sort();
+
+        // Merge jobs
+        let mut job_rows = Vec::new();
+        for (index, (this_job, this_output)) in job_and_output.into_iter().enumerate() {
+            let resource_list = Self::normalize(&this_output.resources_after, &seen_resources);
+            match job_rows.last_mut() {
+                None => {
+                    let resource_by_name_list = Self::create_resource_tool_list(&this_output.resources_after, Some(&this_output.get_changed_resources()));
+                    job_rows.push(JobRow {
+                        job: this_job,
+                        output: this_output,
+                        resource_list,
+                        resource_tool_list: resource_by_name_list,
+                        index,
+                    });
+                }
+                Some(last_row) => {
+                    if this_job.id == last_row.job.id &&
+                        this_output.is_mergeable(&last_row.output)
+                    {
+                        let changed = &this_output.get_changed_resources().into_iter().chain(last_row.output.get_changed_resources()).collect::<Vec<_>>();
+                        let resource_tool_list = Self::create_resource_tool_list(&this_output.resources_after, Some(changed));
+                        last_row.job.instances += this_job.instances;
+                        last_row.resource_list = resource_list;
+                        last_row.resource_tool_list = resource_tool_list;
+                        last_row.output.main_output.changed_resources.extend(this_output.get_changed_resources().into_iter());
+                    } else {
+                        let resource_by_name_list = Self::create_resource_tool_list(&this_output.resources_after, Some(&this_output.get_changed_resources()));
+                        job_rows.push(JobRow {
+                            job: this_job,
+                            output: this_output,
+                            resource_list,
+                            resource_tool_list: resource_by_name_list,
+                            index,
+                        });
+                    }
+                }
+            }
+        }
+
         // Process selectable resources for display
         let attributes = attributes();
         let mut max_row = 0;
+        let resource_by_name_list = Self::create_resource_tool_list(&resources, None);
         let current_resources = Self::normalize(&resources, &seen_resources)
             .into_iter()
+            .chain(resource_by_name_list.into_iter().map(|tool| tool.resource_pair))
             .filter_map(|(resource, amount)| {
                 if amount == 0 {
                     return None;
@@ -654,36 +792,6 @@ impl App {
                     row,
                 })
             }).collect::<Vec<_>>();
-
-        // Merge jobs
-        let mut job_rows = Vec::new();
-        for (index, (this_job, this_output)) in job_and_output.into_iter().enumerate() {
-            match job_rows.last_mut() {
-                None => {
-                    let resource_list = Self::normalize(&this_output.resources_after, &seen_resources);
-                    job_rows.push(JobRow {
-                        job: this_job,
-                        output: this_output,
-                        resource_list,
-                        index,
-                    });
-                }
-                Some(last_row) => {
-                    let resource_list = Self::normalize(&this_output.resources_after, &seen_resources);
-                    if this_job.id == last_row.job.id && this_output.delta_index() == last_row.output.delta_index() && this_output.is_ok() && last_row.output.is_ok() {
-                        last_row.job.instances += this_job.instances;
-                        last_row.resource_list = resource_list;
-                    } else {
-                        job_rows.push(JobRow {
-                            job: this_job,
-                            output: this_output,
-                            resource_list,
-                            index,
-                        });
-                    }
-                }
-            }
-        }
 
         Ok(ViewCache {
             job_rows,
