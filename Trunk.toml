@@ -1,0 +1,11 @@
+[build]
+target = "./index.html"
+public_url = "/strange-facility-1"
+release = true
+
+[watch]
+
+[serve]
+address = "127.0.0.1"
+port = 1420
+open = false
