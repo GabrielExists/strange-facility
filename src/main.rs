@@ -1,5 +1,8 @@
 mod app;
 mod jobs;
+mod view;
+mod view_logic;
+mod game;
 
 #[cfg(target_arch = "wasm32")]
 use app::App;
