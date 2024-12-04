@@ -14,6 +14,7 @@ pub struct App {
     pub discovered_jobs: Vec<Job>,
 
     pub animation_resources: Option<(Timeout, Vec<Resource>)>,
+    pub displayed_job: Option<Job>,
 
     pub view_cache: ViewCache,
     pub programmer_error: Option<String>,
@@ -158,6 +159,7 @@ impl Component for App {
                     selected_resource: None,
                     discovered_jobs: vec![],
                     animation_resources: None,
+                    displayed_job: None,
                     view_cache,
                     programmer_error: None,
                 }
@@ -170,6 +172,7 @@ impl Component for App {
                     selected_resource: None,
                     discovered_jobs: vec![],
                     animation_resources: None,
+                    displayed_job: None,
                     view_cache: ViewCache {
                         job_rows: Vec::new(),
                         seen_resources: vec![],
@@ -315,16 +318,42 @@ impl Component for App {
                     }
                 })}
                 </div>
-                // List available jobs
-                <div class="flex flex-row flex-wrap gap-y-2">
-                { for self.discovered_jobs.iter().map(|job| {
-                    let callback_job = job.clone();
-                    html! {
-                    <button class="border border-slate-900 background-slate-100 p-2 rounded-md mr-1 mt-2" onclick={ctx.link().callback(move |_event: MouseEvent| AppMessage::AddJob(callback_job.clone()))}>
-                        {job.button_text}
-                    </button>
-                    }
-                })}
+                <div class="md:flex md:flex-row">
+                    // List available jobs
+                    <div class="flex flex-row flex-wrap gap-y-2 md:w-3/5">
+                    { for self.discovered_jobs.iter().map(|job| {
+                        let callback_job = job.clone();
+                        html! {
+                        <button class="border border-slate-900 background-slate-100 p-2 rounded-md mr-1 mt-2" onclick={ctx.link().callback(move |_event: MouseEvent| AppMessage::AddJob(callback_job.clone()))}>
+                            {job.button_text}
+                        </button>
+                        }
+                    })}
+                    </div>
+                    <div class="p-1 border-2 border-slate-900 mt-2 md:w-2/5">
+                        <div class="flex flex-row gap-2">
+                            <div class="p-1 border border-slate-900">
+                                {"Icon"}
+                            </div>
+                            <div class="py-1 text-xl">
+                                {"Title"}
+                            </div>
+                        </div>
+                        <div class="p-1">
+                            {"Subtitle"}
+                        </div>
+                        <div class="flex flex-row flex-wrap gap-2">
+                            <div class="p-1 px-2 border border-slate-900">
+                                {"Resource: 4"}
+                            </div>
+                            <div class="p-1 px-2 border border-slate-900">
+                                {"Resource: 5"}
+                            </div>
+                            <div class="p-1 px-2 border border-slate-900">
+                                {"Resource: 6"}
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 // Current error
                 {
@@ -408,7 +437,7 @@ impl Component for App {
                             } else {
                                 html!{<></>}
                             }}
-                            { if job.removable && job.instances != 1 {
+                            { if job.removable {
                                 html! {
                                     <button class={
                                         "ml-2 border border-slate-900 background-slate-100 p-2 py-1 pl-1 flex flex-row items-center justify-center rounded-md"
@@ -419,7 +448,7 @@ impl Component for App {
                             } else {
                                 html!{<></>}
                             }}
-                            { if job.removable {
+                            { if job.removable && job.instances != 1 {
                                 html! {
                                     <button class={
                                         "ml-2 border border-slate-900 background-slate-100 px-2 py-1 flex flex-row items-center justify-center rounded-md"
