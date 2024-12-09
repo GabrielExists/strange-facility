@@ -3,6 +3,24 @@ use crate::app::*;
 use crate::jobs::*;
 use crate::view_logic::*;
 
+pub fn class_string(text: &'static str) -> Classes{
+    let mut split = text.split(" ");
+    if let Some(first) = split.next() {
+        split.into_iter().fold(classes!(first), |mut class, substring| {
+            class.extend(classes!(substring));
+            class
+        })
+    } else {
+        Classes::new()
+    }
+}
+
+pub fn merge(base: &'static str, additional: Classes) -> Classes {
+    let mut base = class_string(base);
+    base.extend(additional);
+    base
+}
+
 pub fn view(app: &App, ctx: &Context<App>) -> Html {
     html! {
         <div class="flex flex-row">
@@ -22,47 +40,65 @@ pub fn view(app: &App, ctx: &Context<App>) -> Html {
                 // List resources
                 <div class="border border-slate-900 p-2">
                     <div>{"Combine two resources!"}</div>
-                { for (0..=app.view_cache.max_row).rev().map(|current_row| {
+                { for app.view_cache.current_resources.iter().map(|row| {
                     html!{
                     <div class="flex gap-1 my-1">
-                { for app
-                    .view_cache
-                    .current_resources
-                    .iter()
-                    .filter(|current_resource|{ current_resource.row == current_row })
-                    .map(|current_resource|
-                {
-                    let resource = current_resource.resource.clone();
-                    let flashing = app.animation_resources.as_ref().map(|(_interval, flashing_resources)| {flashing_resources.contains(&resource)}).unwrap_or(false);
-                    let selected = app.selected_resource.map(|selected| selected == resource).unwrap_or(false);
-                    if selected || flashing {
-                    html! {
+                        { for row.iter().map(|current_resource| {
+                            // let resource = current_resource.resource.clone();
+                            let resource = current_resource.resource.clone();
+                            html! {
                         <button
-                            onclick={ctx.link().callback(move |_event: MouseEvent| AppMessage::SelectResource(resource.clone()))}
-                            class="bg-blue-500 text-slate-100 border border-slate-900 rounded-md p-2"
+                            onclick={ctx.link().callback(move |_event: MouseEvent| AppMessage::SelectResource(resource))}
+                            class={merge("border rounded-md p-2", current_resource.classes.clone())}
                         >
-                            {format!("{}: {}", resource.long_name(), current_resource.amount)}
+                            {format!("{}: {}", current_resource.resource.long_name(), current_resource.amount)}
                         </button>
-                    }
-                    } else {
-                    html! {
-                        <button
-                            onclick={ctx.link().callback(move |_event: MouseEvent| AppMessage::SelectResource(resource.clone()))}
-                            class="border border-slate-900 rounded-md p-2 active:bg-blue-500 active:text-slate-100"
-                        >
-                            {format!("{}: {}", resource.long_name(), current_resource.amount)}
-                        </button>
-                        }
-                    }
-                })}
+                            }
+                        })}
                     </div>
                     }
                 })}
+                // { for (0..=app.view_cache.max_row).rev().map(|current_row| {
+                //     html!{
+                //     <div class="flex gap-1 my-1">
+                // { for app
+                //     .view_cache
+                //     .current_resources
+                //     .iter()
+                //     .filter(|current_resource|{ current_resource.row == current_row })
+                //     .map(|current_resource|
+                // {
+                //     let resource = current_resource.resource.clone();
+                //     let flashing = app.animation_resources.as_ref().map(|(_interval, flashing_resources)| {flashing_resources.contains(&resource)}).unwrap_or(false);
+                //     let selected = app.selected_resource.map(|selected| selected == resource).unwrap_or(false);
+                //     if selected || flashing {
+                //     html! {
+                //         <button
+                //             onclick={ctx.link().callback(move |_event: MouseEvent| AppMessage::SelectResource(resource.clone()))}
+                //             class="bg-blue-500 text-slate-100 border border-slate-900 rounded-md p-2"
+                //         >
+                //             {format!("{}: {}", resource.long_name(), current_resource.amount)}
+                //         </button>
+                //     }
+                //     } else {
+                //     html! {
+                //         <button
+                //             onclick={ctx.link().callback(move |_event: MouseEvent| AppMessage::SelectResource(resource.clone()))}
+                //             class="border border-slate-900 rounded-md p-2 active:bg-blue-500 active:text-slate-100"
+                //         >
+                //             {format!("{}: {}", resource.long_name(), current_resource.amount)}
+                //         </button>
+                //         }
+                //     }
+                // })}
+                //     </div>
+                //     }
+                // })}
                 </div>
                 <div class="md:flex md:flex-row">
                     // List available jobs
                     <div class="flex flex-row flex-wrap gap-y-2 md:w-3/5">
-                    { for app.discovered_jobs.iter().map(|job| {
+                    { for app.state.discovered_jobs.iter().map(|job| {
                         let callback_job = job.clone();
                         html! {
                         <button class="border border-slate-900 background-slate-100 p-2 rounded-md mr-1 mt-2" onclick={ctx.link().callback(move |_event: MouseEvent| AppMessage::AddJob(callback_job.clone()))}>
@@ -100,9 +136,9 @@ pub fn view(app: &App, ctx: &Context<App>) -> Html {
                 {
                     if app.programmer_error.is_some() {
                         html!{ <div class="flex flex-row gap-y-2 p-2 border-2 border-purple-600 my-2"> {&app.programmer_error} </div> }
-                    } else if let CombinationResult::Text(text) = &app.last_combination {
+                    } else if let CombinationResult::Text(text) = &app.state.last_combination {
                         html!{ <div class="flex flex-row gap-y-2 p-2 border-2 border-blue-500 my-2"> {text} </div> }
-                    } else if let CombinationResult::Job(_, Some(text)) = &app.last_combination {
+                    } else if let CombinationResult::Job(_, Some(text)) = &app.state.last_combination {
                         html!{ <div class="flex flex-row gap-y-2 p-2 border-2 border-blue-500 my-2"> {text} </div> }
                     } else if app.view_cache.user_error.is_some() {
                         html!{ <div class="flex flex-row gap-y-2 p-2 border-2 border-red-600 my-2"> {&app.view_cache.user_error} </div> }
@@ -116,8 +152,8 @@ pub fn view(app: &App, ctx: &Context<App>) -> Html {
                         {format!("Total days spent: {}", app.view_cache.total_days)}
                     </div>
                     <button
-                        disabled={app.history.is_empty()}
-                        class={if app.history.is_empty() {
+                        disabled={app.state.history.is_empty()}
+                        class={if app.state.history.is_empty() {
                             "border background-slate-100 p-2 rounded-md border-slate-400 text-slate-400"
                         } else {
                             "border background-slate-100 p-2 rounded-md border-slate-900"
@@ -126,8 +162,8 @@ pub fn view(app: &App, ctx: &Context<App>) -> Html {
                         {"Undo"}
                     </button>
                     <button
-                        disabled={app.redo_queue.is_empty()}
-                        class={if app.redo_queue.is_empty() {
+                        disabled={app.state.redo_queue.is_empty()}
+                        class={if app.state.redo_queue.is_empty() {
                             "border border-slate-400 p-2 rounded-md text-slate-400 background-slate-100"
                         } else {
                             "border border-slate-900 p-2 rounded-md background-slate-100"
@@ -146,7 +182,7 @@ pub fn view(app: &App, ctx: &Context<App>) -> Html {
                             <td class="border border-slate-900 background-slate-100 p-2">
                                 {"Task for today"}
                             </td>
-                    { for app.view_cache.seen_resources.iter().map(|resource| {
+                    { for app.view_cache.resource_headings.iter().map(|resource| {
                         html! {
                             <td class="border border-slate-900 background-slate-100 p-2">
                                 {resource.to_string()}

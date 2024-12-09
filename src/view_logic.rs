@@ -1,15 +1,16 @@
 use std::collections::BTreeMap;
+use yew::Classes;
 use crate::app::*;
 use crate::game::*;
 use crate::jobs::*;
+use crate::view::class_string;
 
 pub struct ViewCache {
+    pub current_resources: Vec<Vec<CurrentResource>>,
     pub job_rows: Vec<JobRow>,
-    pub seen_resources: Vec<Resource>,
-    pub current_resources: Vec<CurrentResource>,
+    pub resource_headings: Vec<Resource>,
     pub total_days: usize,
     pub user_error: Option<String>,
-    pub max_row: usize,
     pub game_state: GameState,
 }
 
@@ -36,6 +37,7 @@ pub struct CurrentResource {
     pub resource: Resource,
     pub amount: i64,
     pub row: usize,
+    pub classes: Classes,
 }
 
 pub enum HistoryStep {
@@ -95,8 +97,8 @@ impl App {
     //     }).collect()
     // }
     pub fn add_job(&mut self, job: Job) {
-        self.history.push(HistoryStep::Job(job));
-        self.redo_queue.clear();
+        self.state.history.push(HistoryStep::Job(job));
+        self.state.redo_queue.clear();
         self.refresh_view_cache();
     }
 
@@ -119,8 +121,8 @@ impl App {
         match &combination_result {
             CombinationResult::Job(new_job, _) => {
                 if new_job.saved {
-                    if self.discovered_jobs.iter().find(|job| job.id == new_job.id).is_none() {
-                        self.discovered_jobs.push(new_job.clone());
+                    if self.state.discovered_jobs.iter().find(|job| job.id == new_job.id).is_none() {
+                        self.state.discovered_jobs.push(new_job.clone());
                     }
                 }
                 self.add_job(new_job.clone())
@@ -128,7 +130,7 @@ impl App {
             CombinationResult::Text(_text) => {}
             CombinationResult::Nothing => {}
         }
-        self.last_combination = combination_result;
+        self.state.last_combination = combination_result;
     }
 
     fn create_resource_tool_list(resources: &ResourceSet, changed: Option<&Vec<Resource>>) -> Vec<ResourceTool> {
@@ -165,8 +167,71 @@ impl App {
         resource_tool_list
     }
 
+    pub fn create_resource_view(state: &State, newest_row_of_resources: ResourceSet) -> Vec<Vec<CurrentResource>> {
+        let attributes = attributes();
+        let mut max_row = 0;
+        let current_resources = newest_row_of_resources.iter()
+            .filter_map(|(resource, amount)| {
+                if *amount > 0 {
+                    if let Some(att) = attributes.get(resource) {
+                        if att.row > max_row {
+                            max_row = att.row;
+                        }
+                        Some((resource, *amount, Some(att)))
+                    } else {
+                        Some((resource, *amount, None))
+                    }
+                } else {
+                    None
+                }
+            }).collect::<Vec<(&Resource, i64, Option<&ResourceAttributes>)>>();
+
+        let mut current_resource_rows = Vec::new();
+        for row_number in (0..=max_row).rev() {
+            let row = current_resources.iter()
+                .filter(|(current_resource, amount, att)| {
+                    let (current_row, visible) = if let Some(att) = att {
+                        (att.row, att.visible)
+                    } else {
+                        (0, true)
+                    };
+                    current_row == row_number && visible
+                })
+                .map(|(current_resource, amount, att)| {
+                    let resource = current_resource.clone();
+                    let flashing = state.animation_resources.as_ref().map(|(_interval, flashing_resources)| { flashing_resources.contains(&resource) }).unwrap_or(false);
+                    let selected = state.selected_resource.map(|selected| selected == *resource).unwrap_or(false);
+                    let show_blue_background = flashing || selected;
+                    let show_blue_border = false;
+                    let row = if let Some(att) = att {
+                        att.row
+                    } else {
+                        0
+                    };
+                    let class = if show_blue_border && show_blue_background {
+                        class_string("bg-blue-500 text-slate-100 border-blue-500")
+                    } else if show_blue_background {
+                        class_string("bg-blue-500 text-slate-100 border-slate-900")
+                    } else if show_blue_border {
+                        class_string("border-blue-500 active:bg-blue-500 active:text-slate-100")
+                    } else {
+                        class_string("border-slate-900 active:bg-blue-500 active:text-slate-100")
+                    };
+                    CurrentResource {
+                        resource: resource.clone(),
+                        amount: *amount,
+                        row,
+                        classes: class,
+                    }
+                })
+                .collect::<Vec<_>>();
+            current_resource_rows.push(row);
+        }
+        current_resource_rows
+    }
+
     pub fn refresh_view_cache(&mut self) {
-        let result = Self::create_view_cache(&self.history);
+        let result = Self::create_view_cache(&self.state);
         match result {
             Ok(view_cache) => {
                 self.view_cache = view_cache;
@@ -178,12 +243,12 @@ impl App {
     }
 
 
-    pub fn create_view_cache(steps: &Vec<HistoryStep>) -> Result<ViewCache, String> {
+    pub fn create_view_cache(state: &State) -> Result<ViewCache, String> {
         let mut user_error = None;
         let mut seen_resources = Vec::new();
         let mut jobs_to_execute = vec![Job::starting_resources()];
         // Apply history to create job application order
-        for step in steps {
+        for step in state.history.iter() {
             match step {
                 HistoryStep::Job(job) => {
                     jobs_to_execute.push(job.clone());
@@ -308,33 +373,14 @@ impl App {
 
         // Process selectable resources for display
         let attributes = attributes();
-        let mut max_row = 0;
-        let resource_by_name_list = Self::create_resource_tool_list(&resources, None);
-        let current_resources = Self::normalize(&resources, &seen_resources)
-            .into_iter()
-            .chain(resource_by_name_list.into_iter().map(|tool| tool.resource_pair))
-            .filter_map(|(resource, amount)| {
-                if amount == 0 {
-                    return None;
-                }
-                let row = attributes.get(&resource).map(|attributes| {
-                    attributes.row.clone()
-                }).unwrap_or(0);
-                max_row = std::cmp::max(max_row, row);
-                Some(CurrentResource {
-                    resource,
-                    amount,
-                    row,
-                })
-            }).collect::<Vec<_>>();
+        let current_resources = App::create_resource_view(state, resources);
 
         Ok(ViewCache {
-            job_rows,
-            seen_resources,
             current_resources,
+            job_rows,
+            resource_headings: seen_resources,
             total_days,
             user_error,
-            max_row,
             game_state,
         })
     }

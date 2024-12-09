@@ -9,17 +9,22 @@ use crate::game::{attributes, WIN_JOB_ID};
 use crate::view_logic::*;
 
 pub struct App {
+    pub state: State,
+
+    pub view_cache: ViewCache,
+    pub programmer_error: Option<String>,
+}
+
+pub struct State {
     pub history: Vec<HistoryStep>,
     pub redo_queue: Vec<HistoryStep>,
     pub last_combination: CombinationResult,
     pub selected_resource: Option<Resource>,
     pub discovered_jobs: Vec<Job>,
 
+    // State for the view
     pub animation_resources: Option<(Timeout, Vec<Resource>)>,
     pub displayed_job: Option<Job>,
-
-    pub view_cache: ViewCache,
-    pub programmer_error: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -39,39 +44,34 @@ impl Component for App {
     type Properties = ();
 
     fn create(_ctx: &Context<Self>) -> Self {
-        let history = Vec::new();
-        let result = App::create_view_cache(&history);
+        let state = State {
+            history: vec![],
+            redo_queue: vec![],
+            last_combination: CombinationResult::Nothing,
+            selected_resource: None,
+            discovered_jobs: vec![],
+            animation_resources: None,
+            displayed_job: None,
+        };
+        let result = App::create_view_cache(&state);
         match result {
             Ok(view_cache) => {
                 Self {
-                    history,
-                    redo_queue: vec![],
-                    last_combination: CombinationResult::Nothing,
-                    selected_resource: None,
-                    discovered_jobs: vec![],
-                    animation_resources: None,
-                    displayed_job: None,
+                    state,
                     view_cache,
                     programmer_error: None,
                 }
             }
             Err(error) => {
                 Self {
-                    history: vec![],
-                    redo_queue: vec![],
-                    last_combination: CombinationResult::Nothing,
-                    selected_resource: None,
-                    discovered_jobs: vec![],
-                    animation_resources: None,
-                    displayed_job: None,
+                    state,
                     view_cache: ViewCache {
                         job_rows: Vec::new(),
-                        seen_resources: vec![],
                         current_resources: vec![],
                         total_days: 0,
                         user_error: None,
-                        max_row: 0,
                         game_state: GameState::Playing,
+                        resource_headings: vec![],
                     },
                     programmer_error: Some(error),
                 }
@@ -86,65 +86,71 @@ impl Component for App {
                     let link = ctx.link().clone();
                     Timeout::new(300, move || link.send_message(AppMessage::AnimationResourceBlinkEnd()))
                 };
-                self.animation_resources = Some((handle, job.combination_resources.clone()));
+                self.state.animation_resources = Some((handle, job.combination_resources.clone()));
                 self.add_job(job);
-                self.last_combination = CombinationResult::Nothing;
+                self.state.last_combination = CombinationResult::Nothing;
                 true
             }
             AppMessage::AddOne(index) => {
-                self.history.push(HistoryStep::AddOne(index));
-                self.redo_queue.clear();
+                self.state.history.push(HistoryStep::AddOne(index));
+                self.state.redo_queue.clear();
                 self.refresh_view_cache();
                 true
             }
             AppMessage::RemoveOne(index) => {
-                self.history.push(HistoryStep::RemoveOne(index));
-                self.redo_queue.clear();
+                self.state.history.push(HistoryStep::RemoveOne(index));
+                self.state.redo_queue.clear();
                 self.refresh_view_cache();
                 true
             }
             AppMessage::RemoveCluster(index) => {
-                self.history.push(HistoryStep::RemoveCluster(index));
-                self.redo_queue.clear();
+                self.state.history.push(HistoryStep::RemoveCluster(index));
+                self.state.redo_queue.clear();
                 self.refresh_view_cache();
                 true
             }
             AppMessage::SelectResource(resource) => {
-                match self.selected_resource {
+                match self.state.selected_resource {
                     None => {
-                        self.selected_resource = Some(resource);
+                        self.state.selected_resource = Some(resource);
+                        self.refresh_view_cache();
                         true
                     }
                     Some(selected_resource) => {
                         if selected_resource != resource {
                             self.apply_combination(&selected_resource, &resource);
-                            self.selected_resource = None;
+                            self.state.selected_resource = None;
+                            self.refresh_view_cache();
                             true
                         } else {
-                            false
+                            // Deselect
+                            self.state.selected_resource = None;
+                            self.refresh_view_cache();
+                            true
                         }
                     }
                 }
             }
             AppMessage::AnimationResourceBlinkEnd() => {
-                self.animation_resources = None;
+                self.state.animation_resources = None;
+                self.refresh_view_cache();
                 true
             }
             AppMessage::Undo() => {
-                match self.history.pop() {
+                match self.state.history.pop() {
                     None => {}
                     Some(step) => {
-                        self.redo_queue.push(step);
+                        self.state.redo_queue.push(step);
                     }
                 }
                 self.refresh_view_cache();
                 true
             }
             AppMessage::Redo() => {
-                match self.redo_queue.pop() {
+                match self.state.redo_queue.pop() {
                     None => {}
                     Some(step) => {
-                        self.history.push(step);
+                        self.state.history.push(step);
                     }
                 }
                 self.refresh_view_cache();

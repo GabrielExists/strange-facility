@@ -382,7 +382,7 @@ impl Resource {
                             (Resource::FoodRation, Amount::Spend(1)),
                         ],
                     ], vec![self.clone(), other.clone()], &mut id),
-                    Some("You but the can among the gray shapes, and when you turn back you've lost it.".to_string()),
+                    Some("You put the can among the gray shapes, and when you turn back you've lost it.".to_string()),
                 )
             }
             both!(SpareParts, Forge) => {
@@ -471,7 +471,7 @@ impl Resource {
             }
             both!(Fish, Net) |
             both!(Fish, NetUpgraded) => {
-                CombinationResult::Text("Yes, is indeed a net intended for fish, but this fish has already been caught. What are you doing?.".to_string())
+                CombinationResult::Text("Yes, it's indeed a net intended for fish, but this fish has already been caught. What are you doing?".to_string())
             }
             both!(FoodRation, Net) |
             both!(FoodRation, NetUpgraded) => {

@@ -443,45 +443,5 @@ pub fn apply_deltas(mut resources: ResourceSet, deltas: &Vec<Vec<(Resource, Amou
         changed_resources,
         resources_after: resources,
     })
-    // if delta.is_negative() {
-    //     if *current_resource > delta as u64 {
-    //         *current_resource += delta as u64;
-    //     } else {
-    //         self.user_error = Some(format!("Not enough {}, {}/{}", resource, current_resource, -delta));
-    //     }
-    // } else {
-    //     *current_resource += delta as u64;
-    // }
 }
-
-// pub fn apply_jobs(mut resources: Resources, jobs: Vec<Job>) -> Result<Resources, String> {
-//     for job in jobs {
-//         resources = apply_job(resources, job)?;
-//     }
-//     Ok(resources)
-// }
-//
-//
-// pub fn apply_jobs_partial(mut resources: Resources, jobs: Vec<Job>) -> Resources {
-//     for job in jobs {
-//         match apply_job(resources.clone(), job) {
-//             Ok(new_resources) => {
-//                 resources = new_resources;
-//             }
-//             Err(_) => {}
-//         }
-//     }
-//     resources
-// }
-//
-// pub fn get_job_success_zip(resources: Resources, jobs: Vec<Job>) -> Vec<(Job, bool)> {
-//     let mut results = Vec::new();
-//     for index in 0..jobs.len() {
-//         let previous_resources = apply_jobs_partial(resources.clone(), jobs[0..index].to_vec());
-//         let job = jobs.get(index).expect("This index should be valid.").clone();
-//         let success = apply_job(previous_resources, job.clone()).is_ok();
-//         results.push((job, success));
-//     }
-//     results
-// }
 
