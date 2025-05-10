@@ -31,6 +31,20 @@ impl Amount {
     }
 }
 
+impl Display for Amount {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Amount::Gain(number) => f.write_fmt(format_args!("+{}", *number)),
+            Amount::Spend(number) => f.write_fmt(format_args!("-{}", *number)),
+            Amount::Catalyst(number) => f.write_fmt(format_args!("require {}", *number)),
+            Amount::GainX(number) => f.write_fmt(format_args!("+{}X", *number)),
+            Amount::SpendX(number) => f.write_fmt(format_args!("-{}X", *number)),
+            Amount::CatalystX(number) => f.write_fmt(format_args!("require {}X", *number)),
+            Amount::Set(number) => f.write_fmt(format_args!("set to {}", *number)),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, Eq, PartialEq)]
 pub enum Resource {
     Player,
@@ -74,6 +88,7 @@ pub struct Job {
     pub instances: usize,
     // Other jobs with the same id are considered to be the exact same
     pub id: usize,
+    // The resources that were combined to discover this
     pub combination_resources: Vec<Resource>,
 }
 

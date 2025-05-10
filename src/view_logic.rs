@@ -36,6 +36,7 @@ pub enum ResourceToolStatus {
 pub struct CurrentResource {
     pub resource: Resource,
     pub amount: i64,
+    #[allow(dead_code)]
     pub row: usize,
     pub classes: Classes,
 }
@@ -54,6 +55,7 @@ pub enum GameState {
     },
 }
 
+#[allow(dead_code)]
 pub fn history_from_combinations(combinations: Vec<(Resource, Resource)>) -> Vec<HistoryStep> {
     let mut history = Vec::new();
     for (first, second) in combinations {
@@ -97,6 +99,7 @@ impl App {
     //     }).collect()
     // }
     pub fn add_job(&mut self, job: Job) {
+        self.state.displayed_job = Some(job.clone());
         self.state.history.push(HistoryStep::Job(job));
         self.state.redo_queue.clear();
         self.refresh_view_cache();
@@ -189,7 +192,7 @@ impl App {
         let mut current_resource_rows = Vec::new();
         for row_number in (0..=max_row).rev() {
             let row = current_resources.iter()
-                .filter(|(current_resource, amount, att)| {
+                .filter(|(_current_resource, _amount, att)| {
                     let (current_row, visible) = if let Some(att) = att {
                         (att.row, att.visible)
                     } else {
@@ -198,9 +201,9 @@ impl App {
                     current_row == row_number && visible
                 })
                 .map(|(current_resource, amount, att)| {
-                    let resource = current_resource.clone();
+                    let resource = (*current_resource).clone();
                     let flashing = state.animation_resources.as_ref().map(|(_interval, flashing_resources)| { flashing_resources.contains(&resource) }).unwrap_or(false);
-                    let selected = state.selected_resource.map(|selected| selected == *resource).unwrap_or(false);
+                    let selected = state.selected_resource.map(|selected| selected == resource).unwrap_or(false);
                     let show_blue_background = flashing || selected;
                     let show_blue_border = false;
                     let row = if let Some(att) = att {
@@ -372,7 +375,7 @@ impl App {
         }
 
         // Process selectable resources for display
-        let attributes = attributes();
+        let _attributes = attributes();
         let current_resources = App::create_resource_view(state, resources);
 
         Ok(ViewCache {

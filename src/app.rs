@@ -1,11 +1,8 @@
 // #![cfg(target_arch = "wasm32")]
 
-use std::cmp::max;
-use std::collections::BTreeMap;
 use yew::prelude::*;
 use crate::jobs::*;
 use gloo::timers::callback::Timeout;
-use crate::game::{attributes, WIN_JOB_ID};
 use crate::view_logic::*;
 
 pub struct App {
@@ -18,11 +15,11 @@ pub struct App {
 pub struct State {
     pub history: Vec<HistoryStep>,
     pub redo_queue: Vec<HistoryStep>,
-    pub last_combination: CombinationResult,
-    pub selected_resource: Option<Resource>,
     pub discovered_jobs: Vec<Job>,
 
     // State for the view
+    pub last_combination: CombinationResult,
+    pub selected_resource: Option<Resource>,
     pub animation_resources: Option<(Timeout, Vec<Resource>)>,
     pub displayed_job: Option<Job>,
 }
@@ -47,9 +44,9 @@ impl Component for App {
         let state = State {
             history: vec![],
             redo_queue: vec![],
+            discovered_jobs: vec![],
             last_combination: CombinationResult::Nothing,
             selected_resource: None,
-            discovered_jobs: vec![],
             animation_resources: None,
             displayed_job: None,
         };

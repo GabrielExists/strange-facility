@@ -107,30 +107,47 @@ pub fn view(app: &App, ctx: &Context<App>) -> Html {
                         }
                     })}
                     </div>
+                { if let Some(job) = &app.state.displayed_job {
+                    html! {
                     <div class="p-1 border-2 border-slate-900 mt-2 md:w-2/5">
                         <div class="flex flex-row gap-2">
                             <div class="p-1 border border-slate-900">
                                 {"Icon"}
                             </div>
                             <div class="py-1 text-xl">
-                                {"Title"}
+                                {job.button_text}
                             </div>
                         </div>
                         <div class="p-1">
                             {"Subtitle"}
                         </div>
+                    { for job.deltas.iter().map(|delta_row|{
+                        html! {
                         <div class="flex flex-row flex-wrap gap-2">
+                        { for delta_row.iter().map(|(resource, amount)| {
+                            html! {
                             <div class="p-1 px-2 border border-slate-900">
-                                {"Resource: 4"}
+                                {format!("{}: {}", resource, amount)}
                             </div>
-                            <div class="p-1 px-2 border border-slate-900">
-                                {"Resource: 5"}
-                            </div>
-                            <div class="p-1 px-2 border border-slate-900">
-                                {"Resource: 6"}
-                            </div>
+                            }
+                        })}
+                        // { for job.deltas.first().iter().map(|resources|resources.iter()).flatten().map(|(resource, amount)| {
+                        //     html! {
+                        //     <div class="p-1 px-2 border border-slate-900">
+                        //         {format!("{}: {}", resource, amount)}
+                        //     </div>
+                        //     }
+                        // }) }
                         </div>
+                        }
+                    })}
                     </div>
+                    }
+                } else {
+                    html! {
+                        <></>
+                    }
+                }}
                 </div>
                 // Current error
                 {

@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 use std::fmt::{Display, Formatter};
-use crate::app::*;
 use crate::jobs::*;
 use crate::view_logic::*;
 
+#[allow(dead_code)]
 pub fn debug_job_history() -> Vec<HistoryStep> {
     history_from_combinations(vec![
         (Resource::Submarine, Resource::Net),
