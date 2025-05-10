@@ -4,6 +4,8 @@ public_url = "/strange-facility-4"
 release = true
 
 [watch]
+watch = ["refresh.txt"]
+ignore = ["src/", "target/", "dist/"]
 
 [serve]
 address = "127.0.0.1"
