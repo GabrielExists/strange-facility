@@ -4,7 +4,7 @@ public_url = "/strange-facility-4"
 release = true
 
 [watch]
-watch = ["refresh.txt"]
+watch = ["refresh.txt", "tailwind.config.js", "tailwind.css"]
 ignore = ["src/", "target/", "dist/"]
 
 [serve]

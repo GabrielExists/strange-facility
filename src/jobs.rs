@@ -2,8 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt::{Display, Formatter};
-use std::vec;
-use crate::game::attributes;
+use crate::game::{attributes, Resource};
 
 
 #[derive(Clone, Copy, Debug, Ord, PartialOrd, Eq, PartialEq)]
@@ -43,23 +42,6 @@ impl Display for Amount {
             Amount::Set(number) => f.write_fmt(format_args!("set to {}", *number)),
         }
     }
-}
-
-#[derive(Clone, Copy, Debug, Ord, PartialOrd, Eq, PartialEq)]
-pub enum Resource {
-    Player,
-    Fish,
-    FoodRation,
-    Scrap,
-    SpareParts,
-    Submarine,
-    Net,
-    NetUpgraded,
-    Claw,
-    ClawUpgraded,
-    Martha,
-    MarthaAtWork,
-    Forge,
 }
 
 pub struct ResourceAttributes {
@@ -126,25 +108,6 @@ impl Job {
             combination_resources,
         }
     }
-    pub fn starting_resources() -> Job {
-        Job {
-            button_text: "Explore the facility",
-            deltas: vec![vec![
-                (Resource::Player, Amount::Gain(1)),
-                (Resource::FoodRation, Amount::Gain(7)),
-                (Resource::Martha, Amount::Gain(1)),
-                (Resource::Forge, Amount::Gain(1)),
-                (Resource::Net, Amount::Gain(1)),
-                (Resource::Submarine, Amount::Gain(1)),
-                (Resource::Claw, Amount::Gain(1)),
-            ]],
-            removable: false,
-            saved: false,
-            instances: 1,
-            id: 0,
-            combination_resources: vec![],
-        }
-    }
 }
 
 pub struct JobOutput {
@@ -206,24 +169,6 @@ impl JobOutput {
     }
     pub fn is_mergeable(&self, other: &Self) -> bool {
         return (self.is_ok() && other.is_ok()) || (!self.is_ok() && !other.is_ok());
-        // if !self.main_output.is_mergeable(&other.main_output) {
-        //     return false;
-        // }
-        // if self.upkeep_outputs.len() != other.upkeep_outputs.len() {
-        //     return false;
-        // }
-        // for (
-        //     (first_resource, first_output),
-        //     (second_resource, second_output)
-        // ) in zip(self.upkeep_outputs.iter(), other.upkeep_outputs.iter()) {
-        //     if first_resource != second_resource {
-        //         return false;
-        //     }
-        //     if !first_output.is_mergeable(&second_output) {
-        //         return false;
-        //     }
-        // }
-        // true
     }
     pub fn get_changed_resources(&self) -> Vec<Resource> {
         let mut total = Vec::new();

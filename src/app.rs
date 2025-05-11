@@ -3,6 +3,7 @@
 use yew::prelude::*;
 use crate::jobs::*;
 use gloo::timers::callback::Timeout;
+use crate::game::Resource;
 use crate::view_logic::*;
 
 pub struct App {
@@ -115,7 +116,6 @@ impl Component for App {
                     }
                     Some(selected_resource) => {
                         if selected_resource != resource {
-                            self.apply_combination(&selected_resource, &resource);
                             self.state.selected_resource = None;
                             self.refresh_view_cache();
                             true

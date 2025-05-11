@@ -55,49 +55,9 @@ pub enum GameState {
     },
 }
 
-#[allow(dead_code)]
-pub fn history_from_combinations(combinations: Vec<(Resource, Resource)>) -> Vec<HistoryStep> {
-    let mut history = Vec::new();
-    for (first, second) in combinations {
-        let result = first.combine(&second);
-        match result {
-            CombinationResult::Job(job, _) => {
-                history.push(HistoryStep::Job(job));
-            }
-            CombinationResult::Text(_) => {}
-            CombinationResult::Nothing => {}
-        }
-    }
-    history
-}
 
 impl App {
 
-    // fn norm(resource_sets: &mut Vec<BTreeMap<Resource, u64>>, resources: &mut Resources) {
-    //     let attributes = attributes();
-    //     for resource in resources.iter() {
-    //         let visible = attributes.get(resource.0).map(|atts| atts.visible).unwrap_or(true);
-    //         for set in resource_sets.iter_mut() {
-    //             if !visible {
-    //                 set.remove(resource.0);
-    //             } else {
-    //                 set.entry(resource.0.clone()).or_insert(0);
-    //             }
-    //         }
-    //     }
-    //     for (resource, attribute) in attributes.iter() {
-    //         if !attribute.visible {
-    //             resources.remove(resource);
-    //         }
-    //     }
-    // }
-    //
-
-    // fn normalize_list(resource_sets: &Vec<ResourceSet>, seen_resources: &Vec<Resource>) -> Vec<Vec<(Resource, i64)>> {
-    //     resource_sets.iter().map(|set| {
-    //         Self::normalize(set, seen_resources)
-    //     }).collect()
-    // }
     pub fn add_job(&mut self, job: Job) {
         self.state.displayed_job = Some(job.clone());
         self.state.history.push(HistoryStep::Job(job));
@@ -118,22 +78,6 @@ impl App {
         resources.retain(|item| {
             attributes.get(item).map(|attribute| attribute.visible && !attribute.display_as_name).unwrap_or(true)
         });
-    }
-    pub fn apply_combination(&mut self, first_resource: &Resource, second_resource: &Resource) {
-        let combination_result = first_resource.combine(second_resource);
-        match &combination_result {
-            CombinationResult::Job(new_job, _) => {
-                if new_job.saved {
-                    if self.state.discovered_jobs.iter().find(|job| job.id == new_job.id).is_none() {
-                        self.state.discovered_jobs.push(new_job.clone());
-                    }
-                }
-                self.add_job(new_job.clone())
-            }
-            CombinationResult::Text(_text) => {}
-            CombinationResult::Nothing => {}
-        }
-        self.state.last_combination = combination_result;
     }
 
     fn create_resource_tool_list(resources: &ResourceSet, changed: Option<&Vec<Resource>>) -> Vec<ResourceTool> {
@@ -249,7 +193,7 @@ impl App {
     pub fn create_view_cache(state: &State) -> Result<ViewCache, String> {
         let mut user_error = None;
         let mut seen_resources = Vec::new();
-        let mut jobs_to_execute = vec![Job::starting_resources()];
+        let mut jobs_to_execute = vec![starting_resources()];
         // Apply history to create job application order
         for step in state.history.iter() {
             match step {
