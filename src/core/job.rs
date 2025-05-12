@@ -1,144 +1,29 @@
-#![allow(dead_code)]
-
-use std::collections::BTreeMap;
-use std::fmt::{Display, Formatter};
-use crate::game::{attributes, Resource};
-
-
-#[derive(Clone, Copy, Debug, Ord, PartialOrd, Eq, PartialEq)]
-pub enum Amount {
-    Gain(i64),
-    Spend(i64),
-    Catalyst(i64),
-    GainX(i64),
-    SpendX(i64),
-    CatalystX(i64),
-    Set(i64),
-}
-
-impl Amount {
-    pub fn multiply(self, factor: i64) -> Self {
-        match self {
-            Amount::Gain(delta) => Amount::Gain(delta * factor),
-            Amount::Spend(delta) => Amount::Spend(delta * factor),
-            Amount::Catalyst(delta) => Amount::Catalyst(delta * factor),
-            Amount::GainX(delta) => Amount::GainX(delta * factor),
-            Amount::SpendX(delta) => Amount::SpendX(delta * factor),
-            Amount::CatalystX(delta) => Amount::CatalystX(delta * factor),
-            Amount::Set(target) => Amount::Set(target * factor),
-        }
-    }
-}
-
-impl Display for Amount {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Amount::Gain(number) => f.write_fmt(format_args!("+{}", *number)),
-            Amount::Spend(number) => f.write_fmt(format_args!("-{}", *number)),
-            Amount::Catalyst(number) => f.write_fmt(format_args!("require {}", *number)),
-            Amount::GainX(number) => f.write_fmt(format_args!("+{}X", *number)),
-            Amount::SpendX(number) => f.write_fmt(format_args!("-{}X", *number)),
-            Amount::CatalystX(number) => f.write_fmt(format_args!("require {}X", *number)),
-            Amount::Set(number) => f.write_fmt(format_args!("set to {}", *number)),
-        }
-    }
-}
-
-pub struct ResourceAttributes {
-    pub upkeep: Vec<Vec<(Resource, Amount)>>,
-    pub visible: bool,
-    // Display as a name on each row intead of reserving a column
-    pub display_as_name: bool,
-    pub row: usize,
-}
-
-pub type ResourceSet = BTreeMap<Resource, i64>;
-pub type ResourceList = Vec<(Resource, i64)>;
-pub type AttributeMappings = BTreeMap<Resource, ResourceAttributes>;
+use strange_facility::jobs::{DeltaOutput, DeltaOutputStatus, ResourceSet};
+use crate::core::amount::Amount;
+use crate::core::resource::{attributes, DeltaOutput, DeltaOutputStatus, Resource, ResourceSet};
 
 #[derive(Clone, Debug)]
 pub struct Job {
-    // Text on the button
-    pub button_text: &'static str,
-    // How resources change when this is applied
-    pub deltas: Vec<Vec<(Resource, Amount)>>,
-    // Can this be removed by the user?
-    pub removable: bool,
+    // Text shown on the button
+    pub short_text: &'static str,
+    // Description
+    pub long_text: &'static str,
+    // How resources change at the start of this job
+    pub start_deltas: Vec<Vec<(Resource, Amount)>>,
+    // How resources change at the end of this job
+    pub end_deltas: Vec<Vec<(Resource, Amount)>>,
     // Does this show up in the quick list of jobs?
     pub saved: bool,
-    // How many sets of jobs are collapsed into this item
-    pub instances: usize,
+    // How many time slots do you need to do to finish this job?
+    pub total_time_slots: usize,
     // Other jobs with the same id are considered to be the exact same
-    pub id: usize,
-    // The resources that were combined to discover this
-    pub combination_resources: Vec<Resource>,
-}
-
-#[derive(Clone, Debug)]
-pub enum CombinationResult {
-    Job(Job, Option<String>),
-    Text(String),
-    Nothing,
-}
-
-impl Job {
-    pub fn new(button_text: &'static str, deltas: Vec<Vec<(Resource, Amount)>>, combination_resources: Vec<Resource>, id: &mut usize) -> Job {
-        let this_id = id.clone();
-        *id += 1;
-        Job {
-            button_text,
-            deltas,
-            removable: true,
-            saved: true,
-            instances: 1,
-            id: this_id,
-            combination_resources,
-        }
-    }
-    pub fn new_unsaved(button_text: &'static str, deltas: Vec<Vec<(Resource, Amount)>>, combination_resources: Vec<Resource>, id: &mut usize) -> Job {
-        let this_id = id.clone();
-        *id += 1;
-        Job {
-            button_text,
-            deltas,
-            removable: true,
-            saved: false,
-            instances: 1,
-            id: this_id,
-            combination_resources,
-        }
-    }
+    pub id: JobId,
 }
 
 pub struct JobOutput {
     pub main_output: DeltaOutput,
     pub upkeep_outputs: Vec<(Resource, DeltaOutput)>,
     pub resources_after: ResourceSet,
-}
-
-pub struct DeltaOutput {
-    pub status: DeltaOutputStatus,
-    pub changed_resources: Vec<Resource>,
-    pub resources_after: ResourceSet,
-}
-
-
-pub enum DeltaOutputStatus {
-    // All requirements were fulfilled for some set
-    Success {
-        delta_index: usize,
-    },
-    // All requirements were fulfilled, and there was a change that cared about X.
-    // Included is the value that was used for X
-    SuccessX {
-        delta_index: usize,
-        x: i64,
-    },
-    // The requirements failed, so the entire task failed
-    Failure {
-        errors: Vec<String>,
-        failing_resources: Vec<Resource>,
-    },
 }
 
 impl JobOutput {
@@ -180,86 +65,15 @@ impl JobOutput {
     }
 }
 
-impl DeltaOutput {
-    pub fn user_messages(&self) -> Option<&Vec<String>> {
-        match &self.status {
-            DeltaOutputStatus::Success { .. } => None,
-            DeltaOutputStatus::SuccessX { .. } => None,
-            DeltaOutputStatus::Failure { errors, .. } => Some(errors),
-        }
-    }
-    pub fn is_ok(&self) -> bool {
-        self.status.is_ok()
-    }
-    pub fn delta_index(&self) -> usize {
-        self.status.delta_index()
-    }
-    pub fn failing_resources(&self) -> Vec<Resource> {
-        self.status.failing_resources()
-    }
-    pub(crate) fn is_mergeable(&self, other: &DeltaOutput) -> bool {
-        match (&self.status, &other.status) {
-            (
-                DeltaOutputStatus::Success { delta_index: first_index },
-                DeltaOutputStatus::Success { delta_index: second_index }
-            ) => {
-                if first_index != second_index {
-                    return false;
-                }
-            }
-            (
-                DeltaOutputStatus::SuccessX { delta_index: first_index, .. },
-                DeltaOutputStatus::SuccessX { delta_index: second_index, .. }
-            ) => {
-                if first_index != second_index {
-                    return false;
-                }
-            }
-            (DeltaOutputStatus::Failure { .. }, DeltaOutputStatus::Failure { .. }) => {}
-            (_, _) => {
-                return false;
-            }
-        }
-        true
-    }
-}
-
-impl DeltaOutputStatus {
-    pub fn is_ok(&self) -> bool {
-        match self {
-            DeltaOutputStatus::Success { .. } => true,
-            DeltaOutputStatus::SuccessX { .. } => true,
-            DeltaOutputStatus::Failure { .. } => false,
-        }
-    }
-    // Get which delta index
-    pub fn delta_index(&self) -> usize {
-        match self {
-            DeltaOutputStatus::Success { delta_index } => delta_index.clone(),
-            DeltaOutputStatus::SuccessX { delta_index, .. } => delta_index.clone(),
-            DeltaOutputStatus::Failure { .. } => { 0 }
-        }
-    }
-    pub fn failing_resources(&self) -> Vec<Resource> {
-        match self {
-            DeltaOutputStatus::Success { .. } => { Vec::new() }
-            DeltaOutputStatus::SuccessX { .. } => { Vec::new() }
-            DeltaOutputStatus::Failure { failing_resources, .. } => {
-                failing_resources.clone()
-            }
-        }
-    }
-}
-
 pub fn apply_job(orig_resources: ResourceSet, job: &Job) -> Result<JobOutput, String> {
     let mut upkeep_outputs = Vec::new();
-    let main_output = apply_deltas(orig_resources, &job.deltas, job.instances as i64)?;
+    let main_output = apply_deltas(orig_resources, &job.end_deltas, 1)?;
     let mut resources = main_output.resources_after.clone();
     for (current_resource, attribute) in attributes() {
         if let Some(num) = resources.get(&current_resource) {
             let num = *num;
             if num > 0 {
-                let delta_output = apply_deltas(resources, &attribute.upkeep, num * job.instances as i64)?;
+                let delta_output = apply_deltas(resources, &attribute.upkeep, num * 1)?;
                 resources = delta_output.resources_after.clone();
                 upkeep_outputs.push((current_resource, delta_output));
             }
@@ -405,3 +219,66 @@ pub fn apply_deltas(mut resources: ResourceSet, deltas: &Vec<Vec<(Resource, Amou
     })
 }
 
+#[derive(Clone, Copy, Debug, Ord, PartialOrd, Eq, PartialEq)]
+pub enum JobId {
+    FragmentCatch,
+    DayDreamCraft,
+    DayDreamSell,
+    BottleBuy,
+    DreamCraft,
+    DreamSell,
+    DreamUse,
+    ComfortDreamCraft,
+    ComfortDreamSell,
+    NightmareCraft,
+    NightmareSell,
+    Retire,
+}
+
+pub fn starting_resources() -> Job{
+    Job {
+        short_text: "Starting resources",
+        long_text: "",
+        start_deltas: vec![],
+        end_deltas: vec![],
+        saved: false,
+        total_time_slots: 0,
+        id: JobId::FragmentCatch,
+    }
+}
+
+pub fn create_job(job_id: JobId) -> Job {
+    Job {
+        short_text: "",
+        long_text: "",
+        start_deltas: vec![],
+        end_deltas: vec![],
+        saved: false,
+        total_time_slots: 0,
+        id: JobId::FragmentCatch,
+    }
+    // match job_id {
+    //     JobId::FragmentCatch => {Job {
+    //         short_text: "",
+    //         long_text: "",
+    //         start_deltas: vec![],
+    //         end_deltas: vec![],
+    //         saved: false,
+    //         total_time_slots: 0,
+    //         id: JobId::FragmentCatch,
+    //     };}
+    //     JobId::DayDreamCraft => {}
+    //     JobId::DayDreamSell => {}
+    //     JobId::BottleBuy => {}
+    //     JobId::DreamCraft => {}
+    //     JobId::DreamSell => {}
+    //     JobId::DreamUse => {}
+    //     JobId::ComfortDreamCraft => {}
+    //     JobId::ComfortDreamSell => {}
+    //     JobId::NightmareCraft => {}
+    //     JobId::NightmareSell => {}
+    //     JobId::Retire => {}
+    // }
+}
+
+pub const WIN_JOB_ID: JobId = JobId::Retire;

@@ -1,9 +1,13 @@
 use std::collections::BTreeMap;
 use yew::Classes;
 use crate::app::*;
+use crate::core::job::{Job, JobOutput, starting_resources};
+use crate::core::resource::{attributes, Resource, ResourceAttributes, ResourceSet};
 use crate::game::*;
 use crate::jobs::*;
+use crate::view::app::{App, State};
 use crate::view::class_string;
+use crate::view::view::class_string;
 
 pub struct ViewCache {
     pub current_resources: Vec<Vec<CurrentResource>>,
@@ -146,9 +150,9 @@ impl App {
                 })
                 .map(|(current_resource, amount, att)| {
                     let resource = (*current_resource).clone();
-                    let flashing = state.animation_resources.as_ref().map(|(_interval, flashing_resources)| { flashing_resources.contains(&resource) }).unwrap_or(false);
-                    let selected = state.selected_resource.map(|selected| selected == resource).unwrap_or(false);
-                    let show_blue_background = flashing || selected;
+                    // let selected = state.selected_resource.map(|selected| selected == resource).unwrap_or(false);
+                    let selected = false;
+                    let show_blue_background =  selected;
                     let show_blue_border = false;
                     let row = if let Some(att) = att {
                         att.row
@@ -234,101 +238,101 @@ impl App {
                 }
             }
         }
-        // Apply jobs
-        let mut resources = BTreeMap::new();
-        let mut job_and_output = Vec::new();
-        for job in jobs_to_execute.into_iter() {
-            let job_output = apply_job(resources.clone(), &job)?;
-            for resource in job_output.resources_after.keys() {
-                let amount = job_output.resources_after.get(resource);
-                if let Some(amount) = amount {
-                    if !seen_resources.contains(resource) && *amount != 0 {
-                        seen_resources.push(resource.clone());
-                    }
-                }
-            }
-
-            if job_output.is_ok() {
-                resources = job_output.resources_after.clone();
-            }
-            match job_output.user_message() {
-                None => {
-                    user_error = None;
-                }
-                Some(error_message) => {
-                    user_error = Some(error_message.to_string());
-                }
-            }
-            job_and_output.push((job, job_output));
-        };
-
-        let mut total_days = 0;
-        let mut game_state = GameState::Playing;
-        for (job, output) in job_and_output.iter() {
-            if output.is_ok() {
-                total_days += job.instances;
-                if job.id == WIN_JOB_ID {
-                    game_state = GameState::Won {
-                        spent_days: total_days,
-                    }
-                }
-            }
-        }
-
-        // Prepare the complete list of resources that should be represented on each row of the table
-        Self::remove_invisible(&mut seen_resources);
-        seen_resources.sort();
-
-        // Merge jobs
-        let mut job_rows = Vec::new();
-        for (index, (this_job, this_output)) in job_and_output.into_iter().enumerate() {
-            let resource_list = Self::normalize(&this_output.resources_after, &seen_resources);
-            match job_rows.last_mut() {
-                None => {
-                    let resource_by_name_list = Self::create_resource_tool_list(&this_output.resources_after, Some(&this_output.get_changed_resources()));
-                    job_rows.push(JobRow {
-                        job: this_job,
-                        output: this_output,
-                        resource_list,
-                        resource_tool_list: resource_by_name_list,
-                        index,
-                    });
-                }
-                Some(last_row) => {
-                    if this_job.id == last_row.job.id &&
-                        this_output.is_mergeable(&last_row.output)
-                    {
-                        let changed = &this_output.get_changed_resources().into_iter().chain(last_row.output.get_changed_resources()).collect::<Vec<_>>();
-                        let resource_tool_list = Self::create_resource_tool_list(&this_output.resources_after, Some(changed));
-                        last_row.job.instances += this_job.instances;
-                        last_row.resource_list = resource_list;
-                        last_row.resource_tool_list = resource_tool_list;
-                        last_row.output.main_output.changed_resources.extend(this_output.get_changed_resources().into_iter());
-                    } else {
-                        let resource_by_name_list = Self::create_resource_tool_list(&this_output.resources_after, Some(&this_output.get_changed_resources()));
-                        job_rows.push(JobRow {
-                            job: this_job,
-                            output: this_output,
-                            resource_list,
-                            resource_tool_list: resource_by_name_list,
-                            index,
-                        });
-                    }
-                }
-            }
-        }
+        // // Apply jobs
+        // let mut resources = BTreeMap::new();
+        // let mut job_and_output = Vec::new();
+        // for job in jobs_to_execute.into_iter() {
+        //     let job_output = apply_job(resources.clone(), &job)?;
+        //     for resource in job_output.resources_after.keys() {
+        //         let amount = job_output.resources_after.get(resource);
+        //         if let Some(amount) = amount {
+        //             if !seen_resources.contains(resource) && *amount != 0 {
+        //                 seen_resources.push(resource.clone());
+        //             }
+        //         }
+        //     }
+        //
+        //     if job_output.is_ok() {
+        //         resources = job_output.resources_after.clone();
+        //     }
+        //     match job_output.user_message() {
+        //         None => {
+        //             user_error = None;
+        //         }
+        //         Some(error_message) => {
+        //             user_error = Some(error_message.to_string());
+        //         }
+        //     }
+        //     job_and_output.push((job, job_output));
+        // };
+        //
+        // let mut total_days = 0;
+        // let mut game_state = GameState::Playing;
+        // for (job, output) in job_and_output.iter() {
+        //     if output.is_ok() {
+        //         // total_days += job.instances;
+        //         if job.id == WIN_JOB_ID {
+        //             game_state = GameState::Won {
+        //                 spent_days: total_days,
+        //             }
+        //         }
+        //     }
+        // }
+        //
+        // // Prepare the complete list of resources that should be represented on each row of the table
+        // Self::remove_invisible(&mut seen_resources);
+        // seen_resources.sort();
+        //
+        // // Merge jobs
+        // let mut job_rows = Vec::new();
+        // for (index, (this_job, this_output)) in job_and_output.into_iter().enumerate() {
+        //     let resource_list = Self::normalize(&this_output.resources_after, &seen_resources);
+        //     match job_rows.last_mut() {
+        //         None => {
+        //             let resource_by_name_list = Self::create_resource_tool_list(&this_output.resources_after, Some(&this_output.get_changed_resources()));
+        //             job_rows.push(JobRow {
+        //                 job: this_job,
+        //                 output: this_output,
+        //                 resource_list,
+        //                 resource_tool_list: resource_by_name_list,
+        //                 index,
+        //             });
+        //         }
+        //         Some(last_row) => {
+        //             if this_job.id == last_row.job.id &&
+        //                 this_output.is_mergeable(&last_row.output)
+        //             {
+        //                 let changed = &this_output.get_changed_resources().into_iter().chain(last_row.output.get_changed_resources()).collect::<Vec<_>>();
+        //                 let resource_tool_list = Self::create_resource_tool_list(&this_output.resources_after, Some(changed));
+        //                 last_row.job.instances += this_job.instances;
+        //                 last_row.resource_list = resource_list;
+        //                 last_row.resource_tool_list = resource_tool_list;
+        //                 last_row.output.main_output.changed_resources.extend(this_output.get_changed_resources().into_iter());
+        //             } else {
+        //                 let resource_by_name_list = Self::create_resource_tool_list(&this_output.resources_after, Some(&this_output.get_changed_resources()));
+        //                 job_rows.push(JobRow {
+        //                     job: this_job,
+        //                     output: this_output,
+        //                     resource_list,
+        //                     resource_tool_list: resource_by_name_list,
+        //                     index,
+        //                 });
+        //             }
+        //         }
+        //     }
+        // }
 
         // Process selectable resources for display
-        let _attributes = attributes();
-        let current_resources = App::create_resource_view(state, resources);
+        // let _attributes = attributes();
+        // let current_resources = App::create_resource_view(state, resources);
 
         Ok(ViewCache {
-            current_resources,
-            job_rows,
+            current_resources: Vec::new(),
+            job_rows: Vec::new(),
             resource_headings: seen_resources,
-            total_days,
+            total_days: 0,
             user_error,
-            game_state,
+            game_state: GameState::Playing,
         })
     }
 }

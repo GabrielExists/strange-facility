@@ -3,7 +3,9 @@
 use yew::prelude::*;
 use crate::jobs::*;
 use gloo::timers::callback::Timeout;
+use crate::core::job::Job;
 use crate::game::Resource;
+use crate::view::view_logic::{GameState, HistoryStep, ViewCache};
 use crate::view_logic::*;
 
 pub struct App {
@@ -19,9 +21,6 @@ pub struct State {
     pub discovered_jobs: Vec<Job>,
 
     // State for the view
-    pub last_combination: CombinationResult,
-    pub selected_resource: Option<Resource>,
-    pub animation_resources: Option<(Timeout, Vec<Resource>)>,
     pub displayed_job: Option<Job>,
 }
 
@@ -31,8 +30,6 @@ pub enum AppMessage {
     AddOne(usize),
     RemoveOne(usize),
     RemoveCluster(usize),
-    SelectResource(Resource),
-    AnimationResourceBlinkEnd(),
     Undo(),
     Redo(),
 }
@@ -46,9 +43,6 @@ impl Component for App {
             history: vec![],
             redo_queue: vec![],
             discovered_jobs: vec![],
-            last_combination: CombinationResult::Nothing,
-            selected_resource: None,
-            animation_resources: None,
             displayed_job: None,
         };
         let result = App::create_view_cache(&state);
@@ -80,13 +74,11 @@ impl Component for App {
     fn update(&mut self, ctx: &Context<Self>, msg: Self::Message) -> bool {
         match msg {
             AppMessage::AddJob(job) => {
-                let handle = {
-                    let link = ctx.link().clone();
-                    Timeout::new(300, move || link.send_message(AppMessage::AnimationResourceBlinkEnd()))
-                };
-                self.state.animation_resources = Some((handle, job.combination_resources.clone()));
+                // let handle = {
+                //     let link = ctx.link().clone();
+                //     Timeout::new(300, move || link.send_message(AppMessage::AnimationResourceBlinkEnd()))
+                // };
                 self.add_job(job);
-                self.state.last_combination = CombinationResult::Nothing;
                 true
             }
             AppMessage::AddOne(index) => {
@@ -104,32 +96,6 @@ impl Component for App {
             AppMessage::RemoveCluster(index) => {
                 self.state.history.push(HistoryStep::RemoveCluster(index));
                 self.state.redo_queue.clear();
-                self.refresh_view_cache();
-                true
-            }
-            AppMessage::SelectResource(resource) => {
-                match self.state.selected_resource {
-                    None => {
-                        self.state.selected_resource = Some(resource);
-                        self.refresh_view_cache();
-                        true
-                    }
-                    Some(selected_resource) => {
-                        if selected_resource != resource {
-                            self.state.selected_resource = None;
-                            self.refresh_view_cache();
-                            true
-                        } else {
-                            // Deselect
-                            self.state.selected_resource = None;
-                            self.refresh_view_cache();
-                            true
-                        }
-                    }
-                }
-            }
-            AppMessage::AnimationResourceBlinkEnd() => {
-                self.state.animation_resources = None;
                 self.refresh_view_cache();
                 true
             }

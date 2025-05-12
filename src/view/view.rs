@@ -32,7 +32,7 @@ pub fn view(app: &App, ctx: &Context<App>) -> Html {
                         let callback_job = job.clone();
                         html! {
                         <button class="border border-slate-900 background-slate-100 p-2 rounded-md mr-1 mt-2" onclick={ctx.link().callback(move |_event: MouseEvent| AppMessage::AddJob(callback_job.clone()))}>
-                            {job.button_text}
+                            {job.short_text}
                         </button>
                         }
                     })}
@@ -45,13 +45,13 @@ pub fn view(app: &App, ctx: &Context<App>) -> Html {
                                 {"Icon"}
                             </div>
                             <div class="py-1 text-xl">
-                                {job.button_text}
+                                {job.short_text}
                             </div>
                         </div>
                         <div class="p-1">
                             {"Subtitle"}
                         </div>
-                    { for job.deltas.iter().map(|delta_row|{
+                    { for job.end_deltas.iter().map(|delta_row|{
                         html! {
                         <div class="flex flex-row flex-wrap gap-2">
                         { for delta_row.iter().map(|(resource, amount)| {
@@ -76,10 +76,10 @@ pub fn view(app: &App, ctx: &Context<App>) -> Html {
                 {
                     if app.programmer_error.is_some() {
                         html!{ <div class="flex flex-row gap-y-2 p-2 border-2 border-purple-600 my-2"> {&app.programmer_error} </div> }
-                    } else if let CombinationResult::Text(text) = &app.state.last_combination {
-                        html!{ <div class="flex flex-row gap-y-2 p-2 border-2 border-blue-500 my-2"> {text} </div> }
-                    } else if let CombinationResult::Job(_, Some(text)) = &app.state.last_combination {
-                        html!{ <div class="flex flex-row gap-y-2 p-2 border-2 border-blue-500 my-2"> {text} </div> }
+                    // } else if let CombinationResult::Text(text) = &app.state.last_combination {
+                    //     html!{ <div class="flex flex-row gap-y-2 p-2 border-2 border-blue-500 my-2"> {text} </div> }
+                    // } else if let CombinationResult::Job(_, Some(text)) = &app.state.last_combination {
+                    //     html!{ <div class="flex flex-row gap-y-2 p-2 border-2 border-blue-500 my-2"> {text} </div> }
                     } else if app.view_cache.user_error.is_some() {
                         html!{ <div class="flex flex-row gap-y-2 p-2 border-2 border-red-600 my-2"> {&app.view_cache.user_error} </div> }
                     } else {

@@ -1,11 +1,8 @@
-mod app;
-mod jobs;
+mod core;
 mod view;
-mod view_logic;
-mod game;
 
 #[cfg(target_arch = "wasm32")]
-use app::App;
+use view::app::App;
 
 #[cfg(target_arch = "wasm32")]
 fn main() {
